@@ -3,6 +3,13 @@
  * Version: 0.0
  * Created: Wed Feb  1 20:36:05 2017
  *******************************************************************************/
+
+/*
+  testing was compiled with the following command:
+  g++ imebraTest.cpp -std=c++11 -L/home/reese/Projects/Project/artifacts -limebra -Wl,-rpath,/home/reese/Projects/Project/artifacts
+
+  artifacts must be created when compiling imebra.
+ */
 #include <imebra/imebra.h>
 #include <iostream>
 int main(int argc, char **argv){
