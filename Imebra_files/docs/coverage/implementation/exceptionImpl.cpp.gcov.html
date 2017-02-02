@@ -1,0 +1,290 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - extracted.info - implementation/exceptionImpl.cpp</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../index.html">top level</a> - <a href="index.html">implementation</a> - exceptionImpl.cpp<span style="font-size: 80%;"> (source / <a href="exceptionImpl.cpp.func-sort-c.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">extracted.info</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">49</td>
+            <td class="headerCovTableEntry">50</td>
+            <td class="headerCovTableEntryHi">98.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2017-01-09 21:49:52</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">13</td>
+            <td class="headerCovTableEntry">13</td>
+            <td class="headerCovTableEntryHi">100.0 %</td>
+          </tr>
+          <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : /*</a>
+<span class="lineNum">       2 </span>            : 
+<span class="lineNum">       3 </span>            : Imebra 4.0.8.1 changeset b15762068bd2
+<span class="lineNum">       4 </span>            : 
+<span class="lineNum">       5 </span>            : Imebra: a C++ Dicom library
+<span class="lineNum">       6 </span>            : 
+<span class="lineNum">       7 </span>            : Copyright (c) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016
+<span class="lineNum">       8 </span>            : by Paolo Brandoli/Binarno s.p.
+<span class="lineNum">       9 </span>            : 
+<span class="lineNum">      10 </span>            : All rights reserved.
+<span class="lineNum">      11 </span>            : 
+<span class="lineNum">      12 </span>            : This program is free software; you can redistribute it and/or modify
+<span class="lineNum">      13 </span>            :  it under the terms of the GNU General Public License version 2 as published by
+<span class="lineNum">      14 </span>            :  the Free Software Foundation.
+<span class="lineNum">      15 </span>            : 
+<span class="lineNum">      16 </span>            : This program is distributed in the hope that it will be useful,
+<span class="lineNum">      17 </span>            :  but WITHOUT ANY WARRANTY; without even the implied warranty of
+<span class="lineNum">      18 </span>            :  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+<span class="lineNum">      19 </span>            :  GNU General Public License for more details.
+<span class="lineNum">      20 </span>            : 
+<span class="lineNum">      21 </span>            : You should have received a copy of the GNU General Public License
+<span class="lineNum">      22 </span>            :  along with this program; if not, write to the Free Software
+<span class="lineNum">      23 </span>            :  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+<span class="lineNum">      24 </span>            : 
+<span class="lineNum">      25 </span>            : -------------------
+<span class="lineNum">      26 </span>            : 
+<span class="lineNum">      27 </span>            : If you want to use Imebra commercially then you have to buy the commercial
+<span class="lineNum">      28 </span>            :  license available at http://imebra.com
+<span class="lineNum">      29 </span>            : 
+<span class="lineNum">      30 </span>            : After you buy the commercial license then you can use Imebra according
+<span class="lineNum">      31 </span>            :  to the terms described in the Imebra Commercial License.
+<span class="lineNum">      32 </span>            : A copy of the Imebra Commercial License is available at http://imebra.com.
+<span class="lineNum">      33 </span>            : 
+<span class="lineNum">      34 </span>            : Imebra is available at http://imebra.com
+<span class="lineNum">      35 </span>            : 
+<span class="lineNum">      36 </span>            : The author can be contacted by email at info@binarno.com or by mail at
+<span class="lineNum">      37 </span>            :  the following address:
+<span class="lineNum">      38 </span>            :  Binarno s.p., Paolo Brandoli
+<span class="lineNum">      39 </span>            :  Rakuseva 14
+<span class="lineNum">      40 </span>            :  1000 Ljubljana
+<span class="lineNum">      41 </span>            :  Slovenia
+<span class="lineNum">      42 </span>            : 
+<span class="lineNum">      43 </span>            : 
+<span class="lineNum">      44 </span>            : 
+<span class="lineNum">      45 </span>            : */
+<span class="lineNum">      46 </span>            : 
+<span class="lineNum">      47 </span>            : /*! \file exception.cpp
+<span class="lineNum">      48 </span>            :     \brief Implementation of the exception classes.
+<span class="lineNum">      49 </span>            : 
+<span class="lineNum">      50 </span>            : */
+<span class="lineNum">      51 </span>            : 
+<span class="lineNum">      52 </span>            : #include &quot;exceptionImpl.h&quot;
+<span class="lineNum">      53 </span>            : #include &quot;charsetConversionImpl.h&quot;
+<span class="lineNum">      54 </span>            : 
+<span class="lineNum">      55 </span>            : namespace imebra
+<span class="lineNum">      56 </span>            : {
+<span class="lineNum">      57 </span>            : 
+<span class="lineNum">      58 </span>            : namespace implementation
+<span class="lineNum">      59 </span>            : {
+<span class="lineNum">      60 </span>            : 
+<span class="lineNum">      61 </span>            : 
+<span class="lineNum">      62 </span>            : ///////////////////////////////////////////////////////////
+<a name="63"><span class="lineNum">      63 </span>            : // Return the message info for the current thread</a>
+<span class="lineNum">      64 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      65 </span><span class="lineCov">         21 : std::string exceptionsManager::getMessage()</span>
+<span class="lineNum">      66 </span>            : {
+<span class="lineNum">      67 </span><span class="lineCov">         42 :         tExceptionInfoList infoList;</span>
+<span class="lineNum">      68 </span><span class="lineCov">         21 :         exceptionsManager::getExceptionInfo(&amp;infoList);</span>
+<span class="lineNum">      69 </span>            : 
+<span class="lineNum">      70 </span><span class="lineCov">         21 :     std::string message;</span>
+<span class="lineNum">      71 </span><span class="lineCov">        315 :         for(tExceptionInfoList::iterator scanInfo = infoList.begin(); </span>
+<span class="lineNum">      72 </span><span class="lineCov">        210 :                 scanInfo != infoList.end(); </span>
+<span class="lineNum">      73 </span>            :                 ++scanInfo)
+<span class="lineNum">      74 </span>            :         {
+<span class="lineNum">      75 </span><span class="lineCov">         84 :                 message += scanInfo-&gt;getMessage();</span>
+<span class="lineNum">      76 </span><span class="lineCov">         84 :         message += &quot;\n\n&quot;;</span>
+<span class="lineNum">      77 </span>            :         }
+<span class="lineNum">      78 </span>            : 
+<span class="lineNum">      79 </span><span class="lineCov">         42 :         return message;</span>
+<span class="lineNum">      80 </span>            : }
+<span class="lineNum">      81 </span>            : 
+<span class="lineNum">      82 </span>            : 
+<span class="lineNum">      83 </span>            : ///////////////////////////////////////////////////////////
+<a name="84"><span class="lineNum">      84 </span>            : // Return the info objects for the specified thread</a>
+<span class="lineNum">      85 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      86 </span><span class="lineCov">         21 : void exceptionsManager::getExceptionInfo(tExceptionInfoList* pList)</span>
+<span class="lineNum">      87 </span>            : {
+<span class="lineNum">      88 </span><span class="lineCov">        315 :     for(tExceptionInfoList::iterator scanInformation = m_information.begin();</span>
+<span class="lineNum">      89 </span><span class="lineCov">        210 :         scanInformation != m_information.end();</span>
+<span class="lineNum">      90 </span>            :                 ++scanInformation)
+<span class="lineNum">      91 </span>            :         {
+<span class="lineNum">      92 </span><span class="lineCov">         84 :                 pList-&gt;push_back(*scanInformation);</span>
+<span class="lineNum">      93 </span>            :         }
+<span class="lineNum">      94 </span><span class="lineCov">         21 :     m_information.clear();</span>
+<span class="lineNum">      95 </span><span class="lineCov">         21 : }</span>
+<span class="lineNum">      96 </span>            : 
+<span class="lineNum">      97 </span>            : 
+<span class="lineNum">      98 </span>            : ///////////////////////////////////////////////////////////
+<a name="99"><span class="lineNum">      99 </span>            : // Add an info object to the current thread</a>
+<span class="lineNum">     100 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     101 </span><span class="lineCov">      47013 : void exceptionsManager::startExceptionInfo(const exceptionInfo&amp; info)</span>
+<span class="lineNum">     102 </span>            : {
+<span class="lineNum">     103 </span><span class="lineCov">      47013 :     m_information.clear();</span>
+<span class="lineNum">     104 </span><span class="lineCov">      47013 :     m_information.push_back(info);</span>
+<span class="lineNum">     105 </span><span class="lineCov">      47013 : }</span>
+<span class="lineNum">     106 </span>            : 
+<span class="lineNum">     107 </span>            : 
+<span class="lineNum">     108 </span>            : ///////////////////////////////////////////////////////////
+<a name="109"><span class="lineNum">     109 </span>            : // Add an info object to the current thread</a>
+<span class="lineNum">     110 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     111 </span><span class="lineCov">     124033 : void exceptionsManager::addExceptionInfo(const exceptionInfo&amp; info)</span>
+<span class="lineNum">     112 </span>            : {
+<span class="lineNum">     113 </span><span class="lineCov">     124033 :     m_information.push_back(info);</span>
+<span class="lineNum">     114 </span><span class="lineCov">     124033 : }</span>
+<span class="lineNum">     115 </span>            : 
+<span class="lineNum">     116 </span>            : 
+<span class="lineNum">     117 </span>            : ///////////////////////////////////////////////////////////
+<a name="118"><span class="lineNum">     118 </span>            : // Construct the exceptionInfo object</a>
+<span class="lineNum">     119 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     120 </span><span class="lineCov">     171046 : exceptionInfo::exceptionInfo(const std::string&amp; functionName, const std::string&amp; fileName, const long lineNumber, const std::string&amp; exceptionType, const std::string&amp; exceptionMessage):</span>
+<span class="lineNum">     121 </span>            :         m_functionName(functionName), 
+<span class="lineNum">     122 </span>            :         m_fileName(fileName),
+<span class="lineNum">     123 </span>            :         m_lineNumber(lineNumber),
+<span class="lineNum">     124 </span>            :         m_exceptionType(exceptionType),
+<span class="lineNum">     125 </span><span class="lineCov">     171046 :         m_exceptionMessage(exceptionMessage)</span>
+<span class="lineNum">     126 </span><span class="lineCov">     171046 : {}</span>
+<span class="lineNum">     127 </span>            : 
+<span class="lineNum">     128 </span>            : ///////////////////////////////////////////////////////////
+<a name="129"><span class="lineNum">     129 </span>            : // Copy constructor</a>
+<span class="lineNum">     130 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     131 </span><span class="lineCov">     171130 : exceptionInfo::exceptionInfo(const exceptionInfo&amp; right):</span>
+<span class="lineNum">     132 </span>            :                         m_functionName(right.m_functionName), 
+<span class="lineNum">     133 </span>            :                         m_fileName(right.m_fileName),
+<span class="lineNum">     134 </span><span class="lineCov">     171130 :                         m_lineNumber(right.m_lineNumber),</span>
+<span class="lineNum">     135 </span>            :                         m_exceptionType(right.m_exceptionType),
+<span class="lineNum">     136 </span><span class="lineCov">     342260 :                         m_exceptionMessage(right.m_exceptionMessage)</span>
+<span class="lineNum">     137 </span><span class="lineCov">     171130 : {}</span>
+<span class="lineNum">     138 </span>            : 
+<span class="lineNum">     139 </span>            : ///////////////////////////////////////////////////////////
+<a name="140"><span class="lineNum">     140 </span>            : // Return the exceptionInfo content in a string</a>
+<span class="lineNum">     141 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     142 </span><span class="lineCov">         84 : std::string exceptionInfo::getMessage()</span>
+<span class="lineNum">     143 </span>            : {
+<span class="lineNum">     144 </span><span class="lineCov">        168 :     std::ostringstream message;</span>
+<span class="lineNum">     145 </span><span class="lineCov">         84 :         message &lt;&lt; &quot;[&quot; &lt;&lt; m_functionName &lt;&lt; &quot;]&quot; &lt;&lt; &quot;\n&quot;;</span>
+<span class="lineNum">     146 </span><span class="lineCov">         84 :     message &lt;&lt; &quot; file: &quot; &lt;&lt; m_fileName &lt;&lt; &quot;  line: &quot; &lt;&lt; m_lineNumber &lt;&lt; &quot;\n&quot;;</span>
+<span class="lineNum">     147 </span><span class="lineCov">         84 :     message &lt;&lt; &quot; exception type: &quot; &lt;&lt; m_exceptionType &lt;&lt; &quot;\n&quot;;</span>
+<span class="lineNum">     148 </span><span class="lineCov">         84 :     message &lt;&lt; &quot; exception message: &quot; &lt;&lt; m_exceptionMessage &lt;&lt; &quot;\n&quot;;</span>
+<span class="lineNum">     149 </span><span class="lineCov">        168 :         return message.str();</span>
+<span class="lineNum">     150 </span>            : }
+<span class="lineNum">     151 </span>            : 
+<a name="152"><span class="lineNum">     152 </span>            : </a>
+<span class="lineNum">     153 </span>            : 
+<span class="lineNum">     154 </span><span class="lineCov">          1 : exceptionsManagerGetter::exceptionsManagerGetter()</span>
+<span class="lineNum">     155 </span>            : {
+<span class="lineNum">     156 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     157 </span>            : 
+<span class="lineNum">     158 </span>            : #ifdef __APPLE__
+<span class="lineNum">     159 </span>            :     ::pthread_key_create(&amp;m_key, &amp;exceptionsManagerGetter::deleteExceptionsManager);
+<span class="lineNum">     160 </span>            : #endif
+<span class="lineNum">     161 </span>            : 
+<span class="lineNum">     162 </span>            :     IMEBRA_FUNCTION_END();
+<a name="163"><span class="lineNum">     163 </span><span class="lineCov">          1 : }</span></a>
+<span class="lineNum">     164 </span>            : 
+<span class="lineNum">     165 </span><span class="lineCov">          1 : exceptionsManagerGetter::~exceptionsManagerGetter()</span>
+<span class="lineNum">     166 </span>            : {
+<span class="lineNum">     167 </span>            : #ifdef __APPLE__
+<span class="lineNum">     168 </span>            :     ::pthread_key_delete(m_key);
+<span class="lineNum">     169 </span>            : #endif
+<a name="170"><span class="lineNum">     170 </span><span class="lineCov">          1 : }</span></a>
+<span class="lineNum">     171 </span>            : 
+<span class="lineNum">     172 </span><span class="lineCov">     171067 : exceptionsManagerGetter&amp; exceptionsManagerGetter::getExceptionsManagerGetter()</span>
+<span class="lineNum">     173 </span>            : {
+<span class="lineNum">     174 </span><span class="lineCov">     171067 :     static exceptionsManagerGetter getter;</span>
+<span class="lineNum">     175 </span><span class="lineCov">     171067 :     return getter;</span>
+<span class="lineNum">     176 </span>            : }
+<span class="lineNum">     177 </span>            : 
+<span class="lineNum">     178 </span>            : #ifndef __APPLE__
+<span class="lineNum">     179 </span><span class="lineCov">     342140 : thread_local std::unique_ptr&lt;exceptionsManager&gt; exceptionsManagerGetter::m_pManager = std::unique_ptr&lt;exceptionsManager&gt;();</span>
+<a name="180"><span class="lineNum">     180 </span>            : #endif</a>
+<span class="lineNum">     181 </span>            : 
+<span class="lineNum">     182 </span><span class="lineCov">     171067 : exceptionsManager&amp; exceptionsManagerGetter::getExceptionsManager()</span>
+<span class="lineNum">     183 </span>            : {
+<span class="lineNum">     184 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     185 </span>            : 
+<span class="lineNum">     186 </span>            : #ifdef __APPLE__
+<span class="lineNum">     187 </span>            :     exceptionsManager* pManager = (exceptionsManager*)pthread_getspecific(m_key);
+<span class="lineNum">     188 </span>            :     if(pManager == 0)
+<span class="lineNum">     189 </span>            :     {
+<span class="lineNum">     190 </span>            :         pManager = new exceptionsManager();
+<span class="lineNum">     191 </span>            :         pthread_setspecific(m_key, pManager);
+<span class="lineNum">     192 </span>            :     }
+<a name="193"><span class="lineNum">     193 </span>            :     return *pManager;</a>
+<span class="lineNum">     194 </span>            : #else
+<span class="lineNum">     195 </span><span class="lineCov">     513204 :     if(m_pManager.get() == 0)</span>
+<span class="lineNum">     196 </span>            :     {
+<span class="lineNum">     197 </span><span class="lineCov">          3 :         m_pManager.reset(new exceptionsManager());</span>
+<span class="lineNum">     198 </span>            :     }
+<span class="lineNum">     199 </span><span class="lineCov">     171067 :     return *(m_pManager.get());</span>
+<span class="lineNum">     200 </span>            : #endif
+<span class="lineNum">     201 </span>            : 
+<span class="lineNum">     202 </span><span class="lineNoCov">          0 :     IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     203 </span>            : }
+<span class="lineNum">     204 </span>            : 
+<span class="lineNum">     205 </span>            : #ifdef __APPLE__
+<span class="lineNum">     206 </span>            : void exceptionsManagerGetter::deleteExceptionsManager(void* pManager)
+<span class="lineNum">     207 </span>            : {
+<span class="lineNum">     208 </span>            :     delete (exceptionsManager*)pManager;
+<span class="lineNum">     209 </span>            : }
+<span class="lineNum">     210 </span>            : #endif
+<span class="lineNum">     211 </span>            : 
+<a name="212"><span class="lineNum">     212 </span>            : } // namespace implementation</a>
+<span class="lineNum">     213 </span>            : 
+<span class="lineNum">     214 </span><span class="lineCov">     342137 : } // namespace imebra</span>
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.12</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>
