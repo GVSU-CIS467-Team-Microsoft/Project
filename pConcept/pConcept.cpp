@@ -34,7 +34,7 @@
 #include <thrust/detail/vector_base.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/iterator/transform_iterator.h>
-//#include <mpi.h>
+#include <mpi.h>
 #include "helper_cuda.h"
 #include "helper_string.h"
 #include "intarray2bmp.hpp"
@@ -63,12 +63,14 @@ struct neuron_t {
 struct connectionWeights_t {
 	double weight;
 	double prevDelta=0.0;
+	int from=-1;
+	int to=-1;
 };
 
 //This currently only handles 'double' values
 class neuralNet {
 public:
-	neuralNet(int in, int out, vector<int> &sizeHiddenMatrix) : Momentum(0.5), StepSize(0.5), divergingCheck(0), LearnError(0.0), RMS(0.0), epoch(0) {
+	neuralNet(int in, int out, vector<int> &sizeHiddenMatrix) : Momentum(0.9), StepSize(0.25), divergingCheck(0), RMS(0.0), epoch(0) {
 		net=vector<vector<neuron_t>>(sizeHiddenMatrix.size()+2);
 		net[0]=vector<neuron_t>(in);
 		for(size_t i=0;i<sizeHiddenMatrix.size();++i) {
@@ -85,71 +87,140 @@ public:
 			for(size_t j=0;j<connectionWeights[i].size();++j) {
 				connectionWeights[i][j].weight=doRandom(randomPrecision);
 			}
-			for(auto n:net[i]) {
-				n.biasWeight=doRandom(randomPrecision);
+			for(size_t j=0;j<net[i].size();++j) {
+				net[i][j].biasWeight=doRandom(randomPrecision);
 			}
 		}
-		for(auto n:net[net.size()-1]) {
-			n.biasWeight=doRandom(randomPrecision);
+		outputsIndex=net.size()-1;
+		numOutputs_int=net[net.size()-1].size();
+		for(size_t i=0;i<numOutputs_int;++i) {
+			net[outputsIndex][i].biasWeight=doRandom(randomPrecision);
 		}
 		StepSizeAcc=0.1*StepSize;
+		numOutputs=(double)out;
+		//Setup from and to indexes.  Just for troubleshooting. May not be needed in the future
+		for(size_t i=1;i<net.size();++i) {
+			for(size_t j=0;j<net[i].size();++j) {
+				ULLI JxN=j*net[i-1].size();
+				for(size_t k=0;k<net[i-1].size();++k) {
+					connectionWeights[i-1][JxN+k].from=k;
+					connectionWeights[i-1][JxN+k].to=j;
+				}
+			}
+		}
 	};
 	~neuralNet(){};
 	void loadWeights(string filename);
 	void saveWeights(string filename);
 
-	void train(vector<vector<double>> &data, vector<double> &labels, double desiredError, ULLI max_cycles) {
+	void train(vector<vector<double>> &data, vector<vector<double>> &labels, double desiredError, ULLI max_cycles) {
 		LastRMS=99.9;
+		cost=1.0;
 		ULLI outerEpoch=0;
+		minRMS=1000000.0;
+		toDivideRMS=((double)data.size())*numOutputs;
+		dataSetSize=data.size();
+
 		cout << "Started training..." << endl;
 		//bool RMS_not_moving=false;
 		//while(LastRMS > desiredError && outerEpoch<max_cycles && !RMS_not_moving) {
 		while(LastRMS > desiredError && outerEpoch<max_cycles) {
-			for(size_t i=0;i<data.size();++i) {
+			for(size_t i=0;i<dataSetSize;++i) {
+				/*int which=random()%data.size();
+				forwardProp(data[which],labels[which]);
+				backwardProp(data[which],labels[which]);*/
 				forwardProp(data[i],labels[i]);
 				backwardProp(data[i],labels[i]);
+				//printNetworkState();
 			}
 			++epoch;
-			printf("Epoch: %llu\t Last RMS Error: %.15f\r",epoch,LastRMS);
-			LastRMS=sqrt(RMS/((double)data.size()*numOutputs));
+			LastRMS=sqrt(RMS/toDivideRMS);
 			RMS=0.0;
 			if(epoch>1) {
-				if (PrevRMSError==LastRMS) {
-					//cout << "RMS not moving\n";
-					//RMS_not_moving=true;
+				if(PrevRMSError<LastRMS) {
+					//cout << "Diverging\n";
 					divergingCheck=0;
-				} else {
-					if(PrevRMSError<LastRMS) {
-						//cout << "Diverging\n";
+					StepSize*=0.95;
+					StepSizeAcc=0.1*StepSize;
+				} else if(PrevRMSError>LastRMS) {
+					//cout << "Converging\n";
+					++divergingCheck;
+					if(divergingCheck==5) {
+						StepSize+=0.04;
+						StepSizeAcc=0.1*StepSize;
 						divergingCheck=0;
-						if(PrevRMSError<LastRMS) {
-							StepSize*=0.95;
-							StepSizeAcc=0.1*StepSize;
-						}
-					} else {
-						//cout << "Converging\n";
-						++divergingCheck;
-						if(divergingCheck==5) {
-							StepSize+=0.04;
-							StepSizeAcc=0.1*StepSize;
-							divergingCheck=0;
-						}
 					}
+				} else {
+					divergingCheck=0;
 				}
+			}
+			if(LastRMS<minRMS) {
+				minRMS=LastRMS;
+				printOutputsForSet(data,labels);
 			}
 			PrevRMSError=LastRMS;
 			++outerEpoch;
 		}
-		cout << "Training done: Cycles: " << outerEpoch << " Error: " << LastRMS << "\r";
+		printOutputsForSet(data,labels);
+		cout << "Training done: Cycles: " << outerEpoch << " Error: " << LastRMS << " minRMS: " << minRMS << "\n";
+	}
+
+	void printOutputsForSet(vector<vector<double>> &data, vector<vector<double>> &labels) {
+		cout << endl;
+		for(size_t i=0;i<data.size();++i) {
+			forwardProp(data[i],labels[i]);
+			cout << "Inputs: ";
+			for(auto n:net[0]) {
+				cout << n.value << " ";
+			}
+			cout << endl;//*/
+			cout << "Output:\t\t";
+			for(size_t j=0;j<numOutputs_int;++j) {
+				printf("%.10f ",net[outputsIndex][j].value);
+				//cout << net[outputsIndex][j].value << " ";
+			}
+			cout << endl;
+			cout << "Expected:\t";
+			for(size_t j=0;j<numOutputs_int;++j) {
+				printf("%.10f ",labels[i][j]);
+				//cout << labels[i][j] << " ";
+			}
+			cout << endl;
+		}
+		printf("Epoch: %llu\t Last RMS Error: %.15f\t min RMS: %.15f\n",epoch,LastRMS,minRMS);
+		cout << "-------------------------------------\n";
+	}
+
+	void printNetworkState() {
+		int layer=0;
+		cout << "-------------------------------------\n";
+		cout << "Neuron layer 0 is the input layer\n";
+		for(auto n:net) {
+			cout << "Layer: " << layer++ << endl;
+			int neuron=0;
+			for(auto nn:n) {
+				cout << "Neuron: " << neuron++ << " value: " << nn.value << " biasWeight: " << nn.biasWeight << " prevBiasDelta: " << nn.prevBiasDelta << " beta: " << nn.beta << endl;
+			}
+			cout << endl;
+		}
+		layer=0;
+		for(auto c:connectionWeights) {
+			cout << "Connection weights from layer: " << layer++ << endl;
+			for(auto cc:c) {
+				cout << "From: " << cc.from << " To: " << cc.to << " weight: " << cc.weight << " prevDelta: " << cc.prevDelta << endl;
+			}
+		}
+		cout << "-------------------------------------\n";
+		sleep(1);
 	}
 
 private:
 	vector<vector<neuron_t>> net;
 	vector<vector<connectionWeights_t>> connectionWeights;
-	double RMS, LastRMS, LearnError, StepSize, StepSizeAcc, Momentum, PrevRMSError;
-	double numOutputs=1.0;
-	ULLI divergingCheck;
-	ULLI epoch;
+	double RMS, LastRMS, StepSize, StepSizeAcc, Momentum, PrevRMSError;
+	double numOutputs, minRMS, toDivideRMS, cost;
+	ULLI divergingCheck, epoch, outputsIndex, numOutputs_int;
+	ULLI dataSetSize;
 
 	double sigmoid(const double x) {
 		return 1.0 / (1.0 + exp(-x));
@@ -162,11 +233,10 @@ private:
 		return 1.0 - th*th; // sech^2(x) = 1 - tanh^2(x)
 	}
 
-	void forwardProp(vector<double> &item, double label) {
+	void forwardProp(vector<double> &item, vector<double> &label) {
 		for(size_t i=0;i<net[0].size();++i) {
 			net[0][i].value=item[i];
 		}
-		LearnError=0.0;
 		size_t outputIndex=net.size()-1;
 		for(size_t i=1;i<net.size();++i) {
 			for(size_t j=0;j<net[i].size();++j) {
@@ -178,40 +248,32 @@ private:
 				}
 				net[i][j].value+=net[i][j].biasWeight;
 				net[i][j].value=sigmoid(net[i][j].value);
-				if(i==outputIndex) {
-					double temp=net[i][j].value-label;
-					LearnError+=temp*temp;
-				}
 			}
 		}
-		/*cout << "Last input: ";
-		for(auto n:net[0]) {
-			cout << n.value << " ";
-		}
-		cout << endl;
-		cout << "Last output: " << (net[net.size()-1][0].value*8.0) << endl;*/
-		LearnError/=2.0;
 	}
 
-	void backwardProp(vector<double> &item, double label) {
-		double deltaweight;
-		ULLI numOutputs=net[net.size()-1].size();
-		ULLI outputsIndex=net.size()-1;
+	void backwardProp(vector<double> &item, vector<double> &label) {
+		double deltaweight, tempBeta;
 		ULLI lastHiddenSize=net[net.size()-2].size();
 		ULLI lastHiddenIndex=net.size()-2;
 		ULLI connectionWeightsIndex=connectionWeights.size()-1;
-		for(size_t i=0;i<numOutputs;++i) {
-			double tempBeta=label-net[outputsIndex][i].value;
+		for(size_t i=0;i<numOutputs_int;++i) {
+			tempBeta=label[i]-net[outputsIndex][i].value;
 			net[outputsIndex][i].beta=tempBeta;
 			RMS+=tempBeta*tempBeta;
 			ULLI IxN=lastHiddenSize*i;
 			for(size_t j=0;j<lastHiddenSize;++j) {
+				/*if(connectionWeights[connectionWeightsIndex][IxN+j].from!=j || connectionWeights[connectionWeightsIndex][IxN+j].to!=i) {
+					cout << "Found bad connection: i: " << i << " j: " << j << endl;
+				}*/
 				net[lastHiddenIndex][j].beta+=connectionWeights[connectionWeightsIndex][IxN+j].weight*sigmoid_derivative(net[outputsIndex][i].value*net[outputsIndex][i].beta);
 				deltaweight=net[lastHiddenIndex][j].value*net[outputsIndex][i].beta;
+				//deltaweight=net[lastHiddenIndex][j].value*net[outputsIndex][i].beta*sigmoid_derivative(net[outputsIndex][i].value);
 				connectionWeights[connectionWeightsIndex][IxN+j].weight+=(StepSize*deltaweight)+(Momentum*connectionWeights[connectionWeightsIndex][IxN+j].prevDelta);
 				connectionWeights[connectionWeightsIndex][IxN+j].prevDelta=deltaweight;
 			}
 			deltaweight=net[outputsIndex][i].beta;
+			//deltaweight=net[outputsIndex][i].beta+sigmoid_derivative(net[outputsIndex][i].value);
 			net[outputsIndex][i].biasWeight+=(StepSize*deltaweight)+(Momentum*net[outputsIndex][i].prevBiasDelta);
 			net[outputsIndex][i].prevBiasDelta=deltaweight;
 		}
@@ -220,13 +282,18 @@ private:
 			for(size_t i=0;i<net[lastHiddenIndex].size();++i) {
 				ULLI IxN=i*net[lastHiddenIndex-1].size();
 				for(size_t j=0;j<net[lastHiddenIndex-1].size();++j) {
+					/*if(connectionWeights[connectionWeightsIndex][IxN+j].from!=j || connectionWeights[connectionWeightsIndex][IxN+j].to!=i) {
+						cout << "Found bad connection: i: " << i << " j: " << j << endl;
+					}*/				
 					net[lastHiddenIndex-1][j].beta+=connectionWeights[connectionWeightsIndex][IxN+j].weight*sigmoid_derivative(net[lastHiddenIndex][i].value*net[lastHiddenIndex][i].beta);
 					deltaweight=net[lastHiddenIndex-1][j].value*sigmoid_derivative(net[lastHiddenIndex][i].value*net[lastHiddenIndex][i].beta);
 					connectionWeights[connectionWeightsIndex][IxN+j].weight+=(StepSizeAcc*deltaweight)+(Momentum*connectionWeights[connectionWeightsIndex][IxN+j].prevDelta);
+					//connectionWeights[connectionWeightsIndex][IxN+j].weight+=(StepSize*deltaweight)+(Momentum*connectionWeights[connectionWeightsIndex][IxN+j].prevDelta);
 					connectionWeights[connectionWeightsIndex][IxN+j].prevDelta=deltaweight;
 				}
 				deltaweight=net[lastHiddenIndex][i].beta*sigmoid_derivative(net[lastHiddenIndex][i].value);
 				net[lastHiddenIndex][i].biasWeight+=(StepSizeAcc*deltaweight)+(Momentum*net[lastHiddenIndex][i].prevBiasDelta);
+				//net[lastHiddenIndex][i].biasWeight+=(StepSize*deltaweight)+(Momentum*net[lastHiddenIndex][i].prevBiasDelta);
 				net[lastHiddenIndex][i].prevBiasDelta=deltaweight;
 			}
 			--connectionWeightsIndex;
@@ -242,9 +309,12 @@ private:
 		//cout << ((double)random()/(double)ULLONG_MAX)*2.0 << endl;
 		//cout << ((((double)(random()%randomPrecision)/(double)randomPrecision)*2.0)-1.0) << endl;
 		return ((((double)(random()%randomPrecision)/(double)randomPrecision)*2.0)-1.0);
+		//return (((double)(random()%randomPrecision)/(double)randomPrecision)*2.0);
+		//return ((((double)(random()%randomPrecision)/(double)randomPrecision)*1.0)-0.5);
 	}
 };
 
+#define BITS 4
 void doMain(int my_rank, string hostname, int num_nodes) {
 	/*vector<vector<UNCHAR>> testData;
 	ReadMNIST_UNCHAR("t10k-images.idx3-ubyte",10000,784,testData);
@@ -252,12 +322,12 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	ReadMNIST_UNCHAR("train-images.idx3-ubyte",60000,784,trainData);
 	vector<UNCHAR> testLabels;
 	vector<UNCHAR> trainLabels;*/
-	vector<vector<double>> testData;
+	/*vector<vector<double>> testData;
 	ReadMNIST_double("t10k-images.idx3-ubyte",10000,784,testData);
 	vector<vector<double>> trainData;
 	ReadMNIST_double("train-images.idx3-ubyte",60000,784,trainData);
-	vector<double> testLabels;
-	vector<double> trainLabels;
+	vector<vector<double>> testLabels;
+	vector<vector<double>> trainLabels;
 	ifstream file("t10k-labels.idx1-ubyte",ios::binary);
 	if(file.is_open()) {
 		int placeHolder=0;
@@ -266,7 +336,9 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 		for(int i=0;i<10000;++i) {
 			UNCHAR temp=0;
 			file.read((char*)&temp,1);
-			testLabels.push_back((double)temp);
+			testLabels.push_back(vector<double>(10,0.0));
+			testLabels.back()[temp]=1.0;
+			//testLabels.push_back((double)temp);
 		}
 		file.close();
 	}
@@ -278,59 +350,44 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 		for(int i=0;i<60000;++i) {
 			UNCHAR temp=0;
 			file2.read((char*)&temp,1);
-			trainLabels.push_back((double)temp);
+			trainLabels.push_back(vector<double>(10,0.0));
+			trainLabels.back()[temp]=1.0;
+			//trainLabels.push_back((double)temp);
 		}
 		file2.close();
-	}
+	}//*/
 	vector<int> hiddenMatrix;
-	//hiddenMatrix.push_back(28);
-	hiddenMatrix.push_back(3);
-	hiddenMatrix.push_back(6);
-	hiddenMatrix.push_back(3);
-	neuralNet test(3,1,hiddenMatrix);
+	//hiddenMatrix.push_back(2000);
+	//hiddenMatrix.push_back(200);
+	hiddenMatrix.push_back(pow(2,BITS+1)+1);
+	//hiddenMatrix.push_back(3);
+	//hiddenMatrix.push_back(3);
+	//hiddenMatrix.push_back(3);
+	//hiddenMatrix.push_back(6);
+	//hiddenMatrix.push_back(3);
+
+	//This code just tries to see if I can get the neuronNet to
+	//count in binary  input:  0 0 0 0 to output: 0 0 0 1
+	neuralNet test(BITS,BITS,hiddenMatrix);
 	vector<vector<double>> countingTest;
-	countingTest=vector<vector<double>>(8);
-	countingTest[0].push_back(0);
-	countingTest[0].push_back(0);
-	countingTest[0].push_back(0);
-	countingTest[1].push_back(0);
-	countingTest[1].push_back(0);
-	countingTest[1].push_back(1);
-	countingTest[2].push_back(0);
-	countingTest[2].push_back(1);
-	countingTest[2].push_back(0);
-	countingTest[3].push_back(0);
-	countingTest[3].push_back(1);
-	countingTest[3].push_back(1);
-	countingTest[4].push_back(1);
-	countingTest[4].push_back(0);
-	countingTest[4].push_back(0);
-	countingTest[5].push_back(1);
-	countingTest[5].push_back(0);
-	countingTest[5].push_back(1);
-	countingTest[6].push_back(1);
-	countingTest[6].push_back(1);
-	countingTest[6].push_back(0);
-	countingTest[7].push_back(1);
-	countingTest[7].push_back(1);
-	countingTest[7].push_back(1);
-	vector<double> countingLabels;
-	double temp=1.0/8.0;
-	countingLabels.push_back(temp*1.0);
-	countingLabels.push_back(temp*2.0);
-	countingLabels.push_back(temp*3.0);
-	countingLabels.push_back(temp*4.0);
-	countingLabels.push_back(temp*5.0);
-	countingLabels.push_back(temp*6.0);
-	countingLabels.push_back(temp*7.0);
-	countingLabels.push_back(temp*0.0);
+	vector<vector<double>> countingLabels;
+	int size=pow(2,BITS);
+	for(int i=0;i<size;++i) {
+		countingTest.push_back(vector<double>(BITS,0.0));
+		countingLabels.push_back(vector<double>(BITS,0.0));
+		for(int j=0;j<BITS;++j) {
+			countingTest.back()[j]=(double)bitset<BITS>(i)[(BITS-1)-j];
+			countingLabels.back()[j]=(double)bitset<BITS>((i+1)%size)[(BITS-1)-j];
+		}
+	}
 	test.train(countingTest,countingLabels,0.005,10000000);
 	return;
 
+	/*vector<int> hiddenMatrix;
+	hiddenMatrix.push_back(112);
 	//hiddenMatrix.push_back(7);
-	//hiddenMatrix.push_back(7);
-	//neuralNet test(784,1,hiddenMatrix);
-	//test.train(trainData,trainLabels,0.005,1000000);
+	neuralNet test(784,10,hiddenMatrix);
+	test.train(trainData,trainLabels,0.005,1000000);*/
 	//cout << (int)trainLabels[0] << " " << (int)trainLabels[1] << endl;
 	/*vector<int> temp;
 	for(auto p:trainData[1]) {
@@ -457,7 +514,7 @@ void ReadMNIST_double(string filename, int NumberOfImages, int DataOfAnImage, ve
                 for(int c=0;c<n_cols;++c) {
                     UNCHAR temp=0;
                     file.read((char*)&temp,sizeof(temp));
-                    arr[i][(n_rows*r)+c]= (double)temp;
+                    arr[i][(n_rows*r)+c]= ((double)temp)/256.0;
                 }
             }
         }
