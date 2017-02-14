@@ -720,7 +720,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 
 
 	////////////////////////////////////////////////////////////////////
-	//Uncomment this section in order to run MNIST data through the
+	//Uncomment the following section in order to run MNIST data through the
 	//sequential version of the algorithm
 	//(be sure to comment out the other sections in 'doMain' before
 	// trying to compile however)
@@ -773,7 +773,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	}//*/
 
 	////////////////////////////////////////////////////////////////////
-	//Uncomment out the section in order to run the MNIST data through the
+	//Uncomment out the following section in order to run the MNIST data through the
 	//Cuda(parallel) version of the algorithm
 	//(be sure to comment out the other sections in 'doMain' before
 	// trying to compile however)
@@ -827,7 +827,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	test.train_cuda(trainData,trainLabels,0.0001,1000000,784,60000);	//*/
 
 	//////////////////////////////////////////////////////////////////////
-	//Uncomment out this section in order to run the 'bit counting' problem thru
+	//Uncomment out the following section in order to run the 'bit counting' problem thru
 	//the NN thru Cuda(parallel) version of the algorithm
 	//(be sure to comment out the other sections in 'doMain' before
 	// trying to compile however)
@@ -866,7 +866,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	return;//*/
 
 	////////////////////////////////////////////////////////////////////////////////
-	//Uncomment out this section of code the run the 'bit counting' problem thru
+	//Uncomment out the following section of code the run the 'bit counting' problem thru
 	//the sequential version of the algorithm
 	//(be sure to comment out the other sections in 'doMain' before
 	// trying to compile however)
