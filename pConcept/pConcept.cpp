@@ -52,13 +52,12 @@ using nanoSec = std::chrono::nanoseconds;
 #define ULLI unsigned long long int
 #define UNCHAR unsigned char
 //#define MAX 25
-
-void ReadMNIST_double(string filename, int NumberOfImages, int DataOfAnImage, vector<vector<double>> &arr);
-void ReadMNIST_UNCHAR(string filename, int NumberOfImages, int DataOfAnImage, vector<vector<UNCHAR>> &arr);
-void ReadMNIST_float(string filename, int NumberOfImages, int DataOfAnImage, vector<float> &arr);
+#define BITS 5
 
 // A separate struct in case this needs to be
 // more complex in the future
+//(Actually I found that this needs to be less complex in order
+//to be easier to work with in Cuda. All these array should be separated)
 struct neuron_t {
 	double value=0.0;
 	double biasWeight=1.0;
@@ -66,6 +65,10 @@ struct neuron_t {
 	double prevBiasDelta=0.0;
 };
 
+
+void ReadMNIST_double(string filename, int NumberOfImages, int DataOfAnImage, vector<vector<double>> &arr);
+void ReadMNIST_UNCHAR(string filename, int NumberOfImages, int DataOfAnImage, vector<vector<UNCHAR>> &arr);
+void ReadMNIST_float(string filename, int NumberOfImages, int DataOfAnImage, vector<float> &arr);
 void ReadMNIST_neuron_t(string filename, int NumberOfImages, int DataOfAnImage, vector<vector<neuron_t>> &arr);
 
 struct connectionWeights_t {
@@ -693,8 +696,14 @@ private:
 	}
 };
 
-#define BITS 5
+//Made a separate 'doMain' function (as opposed to 'int main' in order to not have to constantly work
+//around the OpenMPI directives(among other things) in 'int main'  Just makes it easier to
+//work with.
 void doMain(int my_rank, string hostname, int num_nodes) {
+	////////////////////////////////////////////////////////////////////
+	//This section isn't used currently.  Was used to test if I was reading
+	//in the pictures from the MNIST dataset properly
+
 	//cout << "sizeof float: " << sizeof(float) << endl;
 	//cout << "sizeof double: " << sizeof(double) << endl;
 	/*vector<vector<UNCHAR>> testData;
@@ -704,12 +713,30 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	vector<UNCHAR> testLabels;
 	vector<UNCHAR> trainLabels;*/
 
-	////////////////////////////////////////////////////////////////////
 	/*vector<vector<double>> testData;
 	ReadMNIST_double("t10k-images.idx3-ubyte",10000,784,testData);
 	vector<vector<double>> trainData;
 	ReadMNIST_double("train-images.idx3-ubyte",60000,784,trainData);*/
+
+
 	////////////////////////////////////////////////////////////////////
+	//Uncomment this section in order to run MNIST data through the
+	//sequential version of the algorithm
+	//(be sure to comment out the other sections in 'doMain' before
+	// trying to compile however)
+
+	//MNIST picutres are 28x28 pixels.  So naturally we make the 
+	//number of inputs to the nerual net as 784 (28x28).  I found
+	//that the NN works the best when there is only one hidden layer
+	//and that hidden layer has 1.5 times as many nodes as input layers
+	//So 1.5*784=1176 hidden nodes in the middle.  Also the algorithm
+	//works better when there is more than one output node.  So there 
+	//is one output node for each decimal digit (10). 
+	//This runs way too slow to be useful in the sequential version,
+	//but the speed up I get from early trials with Cuda and MNIST
+	//makes it run fast enough to run through the entire dataset once in less
+	//than about 10 minutes.  Which is doable.  
+
 	/*vector<vector<neuron_t>> testData;
 	ReadMNIST_neuron_t("t10k-images.idx3-ubyte",10000,784,testData);
 	vector<vector<neuron_t>> trainData;
@@ -744,6 +771,12 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 		}
 		file2.close();
 	}//*/
+
+	////////////////////////////////////////////////////////////////////
+	//Uncomment out the section in order to run the MNIST data through the
+	//Cuda(parallel) version of the algorithm
+	//(be sure to comment out the other sections in 'doMain' before
+	// trying to compile however)
 
 	/*vector<float> testData;
 	ReadMNIST_float("t10k-images.idx3-ubyte",10000,784,testData);
@@ -793,6 +826,12 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	neuralNet test(784,10,hiddenMatrix,true);
 	test.train_cuda(trainData,trainLabels,0.0001,1000000,784,60000);	//*/
 
+	//////////////////////////////////////////////////////////////////////
+	//Uncomment out this section in order to run the 'bit counting' problem thru
+	//the NN thru Cuda(parallel) version of the algorithm
+	//(be sure to comment out the other sections in 'doMain' before
+	// trying to compile however)
+
 	/*vector<int> hiddenMatrix;
 	//hiddenMatrix.push_back(2000);
 	//hiddenMatrix.push_back(200);
@@ -826,8 +865,15 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	test.train_cuda(countingTest,countingLabels,0.005f,1000000,BITS,size);
 	return;//*/
 
+	////////////////////////////////////////////////////////////////////////////////
+	//Uncomment out this section of code the run the 'bit counting' problem thru
+	//the sequential version of the algorithm
+	//(be sure to comment out the other sections in 'doMain' before
+	// trying to compile however)
+
 	//This code just tries to see if I can get the neuralNet to
 	//count in binary  input:  0 0 0 0 to output: 0 0 0 1
+
 	vector<int> hiddenMatrix;
 	hiddenMatrix.push_back(BITS+(BITS/2));
 	neuralNet test(BITS,BITS,hiddenMatrix,false);
@@ -845,6 +891,11 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	test.train(countingTest,countingLabels,0.0001,1000000);
 	return;//*/
 
+	////////////////////
+	//I don't remember what this code was for...oh, I was outputting a bitmap
+	//to disk in order to see if I was reading in the MNIST 28x28 pictures correctly
+	//Since I'm sure I'm doing that correctly, I could probably remove this code.
+	//....I suppose...whatever
 	/*vector<int> hiddenMatrix;
 	hiddenMatrix.push_back(784+(784/2));
 	//hiddenMatrix.push_back(7);
@@ -956,6 +1007,10 @@ int ReverseInt(int i) {
     return((int)ch1<<24)+((int)ch2<<16)+((int)ch3<<8)+ch4;
 }
 
+//Four versions of this load function.  I suppose a C++ template would be appropriate
+//, but why?  It's probably more trouble than it's worth.  We're not using the MNIST
+//data for our final problem anyway.  Also depending on the type, the code is different
+//for each data type anyway.
 void ReadMNIST_neuron_t(string filename, int NumberOfImages, int DataOfAnImage, vector<vector<neuron_t>> &arr) {
     arr.resize(NumberOfImages,vector<neuron_t>(DataOfAnImage));
     ifstream file(filename,ios::binary);
