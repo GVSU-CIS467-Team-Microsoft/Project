@@ -200,15 +200,6 @@ struct backProp_first : public thrust::unary_function<ULLI,ULLI> {
 			connStart+=sizeMatrix[layer-1];
 		}
 	}
-						/*deltaweight=net[lastHiddenIndex-1][j].value*sigmoid_derivative(net[lastHiddenIndex][i].value)*net[lastHiddenIndex][i].beta;
-					connectionWeights[connectionWeightsIndex][IxN+j].weight+=(StepSizeAcc*deltaweight)+(Momentum*connectionWeights[connectionWeightsIndex][IxN+j].prevDelta);
-					//connectionWeights[connectionWeightsIndex][IxN+j].weight+=(StepSize*deltaweight)+(Momentum*connectionWeights[connectionWeightsIndex][IxN+j].prevDelta);
-					connectionWeights[connectionWeightsIndex][IxN+j].prevDelta=deltaweight;
-				}
-				deltaweight=net[lastHiddenIndex][i].beta*sigmoid_derivative(net[lastHiddenIndex][i].value);
-				net[lastHiddenIndex][i].biasWeight+=(StepSizeAcc*deltaweight)+(Momentum*net[lastHiddenIndex][i].prevBiasDelta);
-				//net[lastHiddenIndex][i].biasWeight+=(StepSize*deltaweight)+(Momentum*net[lastHiddenIndex][i].prevBiasDelta);
-				net[lastHiddenIndex][i].prevBiasDelta=deltaweight;*/
 };
 
 //typedef thrust::tuple<float, float> fTuple;
@@ -494,7 +485,7 @@ public:
 		cout << endl;
 		for(size_t i=0;i<dataSetSize;++i) {
 			forwardProp(data[i]);
-			/*cout << "Inputs: ";
+			cout << "Inputs: ";
 			for(auto n:net[0]) {
 				cout << n.value << " ";
 			}
@@ -660,6 +651,7 @@ private:
 			//deltaweight=net[outputsIndex][i].beta+sigmoid_derivative(net[outputsIndex][i].value);
 			net[outputsIndex][i].biasWeight+=(StepSize*tempBeta)+(Momentum*net[outputsIndex][i].prevBiasDelta);
 			net[outputsIndex][i].prevBiasDelta=tempBeta;
+			//yes,3,inf,yes//no,3,inf,yes
 		}
 		--connectionWeightsIndex;
 		while(lastHiddenIndex>0) {
@@ -701,7 +693,7 @@ private:
 	}
 };
 
-#define BITS 10
+#define BITS 5
 void doMain(int my_rank, string hostname, int num_nodes) {
 	//cout << "sizeof float: " << sizeof(float) << endl;
 	//cout << "sizeof double: " << sizeof(double) << endl;
@@ -801,7 +793,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	neuralNet test(784,10,hiddenMatrix,true);
 	test.train_cuda(trainData,trainLabels,0.0001,1000000,784,60000);	//*/
 
-	vector<int> hiddenMatrix;
+	/*vector<int> hiddenMatrix;
 	//hiddenMatrix.push_back(2000);
 	//hiddenMatrix.push_back(200);
 	//hiddenMatrix.push_back(pow(2,BITS+1)+1);
@@ -836,7 +828,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 
 	//This code just tries to see if I can get the neuralNet to
 	//count in binary  input:  0 0 0 0 to output: 0 0 0 1
-	/*vector<int> hiddenMatrix;
+	vector<int> hiddenMatrix;
 	hiddenMatrix.push_back(BITS+(BITS/2));
 	neuralNet test(BITS,BITS,hiddenMatrix,false);
 	vector<vector<neuron_t>> countingTest;
@@ -850,7 +842,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 			countingLabels.back()[j]=(double)bitset<BITS>((i+1)%size)[(BITS-1)-j];
 		}
 	}
-	test.train(countingTest,countingLabels,0.0000001,1000000);
+	test.train(countingTest,countingLabels,0.0001,1000000);
 	return;//*/
 
 	/*vector<int> hiddenMatrix;
