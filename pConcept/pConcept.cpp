@@ -45,6 +45,7 @@
 #include <limits.h>
 #include <float.h>
 #include <random>
+//#include <cudnn.h>
 using namespace std;
 using namespace thrust;
 using namespace chrono;
@@ -52,17 +53,22 @@ using nanoSec = std::chrono::nanoseconds;
 #define ULLI unsigned long long int
 #define UNCHAR unsigned char
 //#define MAX 25
-#define BITS 5
+#ifndef BITS
+#define BITS 4
+#endif
 
 // A separate struct in case this needs to be
 // more complex in the future
 //(Actually I found that this needs to be less complex in order
-//to be easier to work with in Cuda. All these array should be separated)
+//to be easier to work with in Cuda. All these arrays should be separated)
 struct neuron_t {
-	double value=0.0;
+	double output=0.0;
+	double input=0.0;
 	double biasWeight=1.0;
 	double beta=0.0;
 	double prevBiasDelta=0.0;
+	double errorSignal=0.0;
+	double localDerivative=0.0;
 };
 
 
@@ -76,145 +82,6 @@ struct connectionWeights_t {
 	double prevDelta=0.0;
 	//int from=-1;
 	//int to=-1;
-};
-
-//These two were added in order to reduce memory footprint on the Cuda device
-//Now these are not used
-struct neuron_float_t {
-	float value=0.0f;
-	float biasWeight=1.0f;
-	float beta=0.0f;
-	float prevBiasDelta=0.0f;
-};
-
-struct connectionWeights_float_t {
-	float weight;
-	float prevDelta=0.0f;
-};
-
-struct doRandomFloats {
-	__device__ float operator()(int t) {
-		thrust::default_random_engine defRandEngine;
-		thrust::uniform_real_distribution<float> uniRealDist;
-		defRandEngine.discard(t);
-		return (uniRealDist(defRandEngine)*2.0f)-1.0f;
-	}
-};
-
-/*struct transformReduce : public thrust::unary_function<sTuple, UNCHAR> {
-	__device__ UNCHAR operator()(sTuple t) {
-		if(thrust::get<1>(t)==-1) {
-			return 0;
-		}
-		return thrust::get<1>(t);
-	}
-};*/
-
-typedef thrust::tuple<ULLI, ULLI> uTuple;
-struct forwardProp_functor : public thrust::unary_function<ULLI,UNCHAR> {
-	float *connectionWeights;
-	float *net;
-	int *sizeMatrix;
-	float *biasWeight;
-	ULLI *connWeightsStart;
-	ULLI *nStart;
-	ULLI totalLayers;
-	ULLI layer;
-	forwardProp_functor(){}
-	forwardProp_functor(float *cw, float *nn, int *_sMatrix, ULLI tLayers, float *bw, ULLI *cws, ULLI *ns) : 
-			connectionWeights(cw),net(nn),sizeMatrix(_sMatrix),totalLayers(tLayers),
-			biasWeight(bw), connWeightsStart(cws), nStart(ns){}
-
-	__device__ void operator()(ULLI t) {
-		ULLI start=nStart[layer];
-		ULLI end=nStart[layer+1];
-		ULLI connStart=connWeightsStart[layer]+((t-end)*sizeMatrix[layer]);
-		for(ULLI i=start;i<end;++i) {
-			net[t]+=net[i]*connectionWeights[connStart];
-			//printf("start: %llu end: %llu connStart: %llu t: %llu i: %llu\n",start,end,connStart,t,i);
-			++connStart;//+=sizeMatrix[layer];
-		}
-		net[t]+=biasWeight[t];
-		net[t]=1.0f/(1.0f+exp(-net[t]));
-		return;
-	}
-	void update(ULLI _layer) {
-		layer=_layer;
-	}
-};
-
-struct backProp_first : public thrust::unary_function<ULLI,ULLI> {
-	ULLI totalLayers;
-	float *connWeights;
-	float *net;
-	int *sizeMatrix;
-	ULLI *nStart;
-	ULLI *cwStart;
-	float Momentum;
-	float StepSize;
-	float StepSizeAcc;
-	float *prevDelta;
-	float *biasWeights;
-	float *prevBiasDelta;
-	float *betas;
-	ULLI layer;
-	backProp_first(){}
-	backProp_first(float *cw, float *nn, int *smat, ULLI _tLayers, float *bw, ULLI *cws, ULLI *ns, float _Momentum, float sStep, float sStepA,
-		float *pDelta, float *pBiasDelta, float *b):
-		connWeights(cw), net(nn), sizeMatrix(smat), totalLayers(_tLayers), biasWeights(bw), cwStart(cws), nStart(ns), Momentum(_Momentum),
-		StepSize(sStep), StepSizeAcc(sStepA), prevDelta(pDelta), prevBiasDelta(pBiasDelta), betas(b) {}
-
-	void updateThree(float _Momentum, float _StepSize, float _StepSizeAcc, ULLI _layer) {
-		Momentum=_Momentum;
-		StepSize=_StepSize;
-		StepSizeAcc=_StepSizeAcc;
-		layer=_layer;
-	}
-	__device__ void operator()(ULLI t) {
-		ULLI start=nStart[layer];
-		ULLI end=nStart[layer+1];
-		float tempBeta, tempActivation, deltaweight;
-		//ULLI connStart=cwStart[layer-1]+((t-start)*sizeMatrix[layer-1]);
-		ULLI connStart=cwStart[layer-1]+(t-start);
-		bool first=false;
-		if(layer==totalLayers-1) {
-			first=true;
-		}
-		for(ULLI i=start;i<end;++i) {
-			tempBeta=betas[i];
-			tempActivation=net[i]*(1.0f-net[i]);
-			if(first) {
-				deltaweight=net[t]*tempBeta;
-				betas[t]+=connWeights[connStart]*tempActivation*tempBeta;
-				connWeights[connStart]+=(StepSize*deltaweight)+(Momentum*prevDelta[connStart]);
-				prevDelta[connStart]=deltaweight;
-				biasWeights[i]+=(StepSize*tempBeta)+(Momentum*prevBiasDelta[i]);
-				prevBiasDelta[i]=tempBeta;
-			} else {
-				deltaweight=net[t]*tempActivation*tempBeta;
-				betas[t]+=connWeights[connStart]*tempActivation*tempBeta;
-				connWeights[connStart]+=(StepSizeAcc*deltaweight)+(Momentum*prevDelta[connStart]);
-				prevDelta[connStart]=deltaweight;
-				deltaweight=tempBeta*tempActivation;
-				biasWeights[i]+=(StepSizeAcc*deltaweight)+(Momentum*prevBiasDelta[i]);
-				prevBiasDelta[i]=deltaweight;
-			}
-			//printf("start: %llu end: %llu connStart: %llu\n",start,end,connStart);
-			connStart+=sizeMatrix[layer-1];
-		}
-	}
-};
-
-//typedef thrust::tuple<float, float> fTuple;
-struct reduxSumActivation : public thrust::unary_function<float,float> {
-	__host__ __device__	float operator()(float x, float y) {
-		//sigmoid
-		//if(x && y) {
-		//	float out=1.0f / (1.0f + exp(-(x+y)));
-		//	printf("x: %.5f y: %.5f out: %.5f\n",x,y,out);
-		//}
-		return 1.0f / (1.0f + exp(-(x+y)));
-	}
 };
 
 class neuralNet {
@@ -259,71 +126,7 @@ public:
 				}
 			}*/
 		} else {
-			sizeHiddenMatrix.insert(sizeHiddenMatrix.begin(),in);
-			sizeHiddenMatrix.push_back(out);
-			sizeHiddenMatrix_host=vector<int>(sizeHiddenMatrix.begin(),sizeHiddenMatrix.end());
-			int *temp=&sizeHiddenMatrix[0];
-			layers=sizeHiddenMatrix.size();
-			sizesOfMatrix_cuda=device_vector<int>(temp,temp+layers);
-			totalNeurons=std::accumulate(sizeHiddenMatrix.begin(),sizeHiddenMatrix.end(),0);
-			auto maxE=std::max_element(sizeHiddenMatrix.begin(),sizeHiddenMatrix.end());
-			maxSize=*maxE;
-			tempFloats=device_vector<float>(maxSize);
-			connectionWeightsStart=device_vector<ULLI>(layers);
-			connectionWeightsStart_host=vector<ULLI>(layers);
-			ULLI connectionWeightsIndex=0;
-			for(int i=0;i<layers-1;++i) {
-				connectionWeightsStart[i]=connectionWeightsIndex;
-				connectionWeightsStart_host[i]=connectionWeightsIndex;
-				connectionWeightsIndex+=sizeHiddenMatrix[i]*sizeHiddenMatrix[i+1];
-			}
-			neuronsStart=device_vector<ULLI>(layers+1);
-			neuronsStart_host=vector<ULLI>(layers+1);
-			ULLI neuronsIndex=0;
-			for(int i=0;i<layers;++i) {
-				neuronsStart[i]=neuronsIndex;
-				neuronsStart_host[i]=neuronsIndex;
-				neuronsIndex+=sizeHiddenMatrix[i];
-			}
-			neuronsStart[layers]=totalNeurons;
-			neuronsStart_host[layers]=totalNeurons;
 
-			net_cuda=device_vector<float>(totalNeurons);
-			biasWeight_cuda=device_vector<float>(totalNeurons);
-			beta_cuda=device_vector<float>(totalNeurons);
-			prevBiasDelta_cuda=device_vector<float>(totalNeurons);
-
-			totalConnectionWeights=0;
-			for(size_t i=1;i<sizeHiddenMatrix.size();++i) {
-				totalConnectionWeights+=sizeHiddenMatrix[i-1]*sizeHiddenMatrix[i];
-			}
-			connectionWeightsStart[layers-1]=totalConnectionWeights;
-			connectionWeightsStart_host[layers-1]=totalConnectionWeights;
-			connectionWeights_cuda=device_vector<float>(totalConnectionWeights);
-			prevDelta_cuda=device_vector<float>(totalConnectionWeights);
-			thrust::fill(prevDelta_cuda.begin(),prevDelta_cuda.end(),0.0f);
-
-			thrust::counting_iterator<ULLI> begin1(0);
-			thrust::counting_iterator<ULLI> end1(totalConnectionWeights);
-			int r=rand()%100;
-			for(int i=0;i<r;++i) {
-				thrust::transform(begin1,end1,connectionWeights_cuda.begin(),doRandomFloats());
-			}
-
-			thrust::counting_iterator<ULLI> begin2(0);
-			thrust::counting_iterator<ULLI> end2(totalNeurons);
-			thrust::transform(begin2,end2,biasWeight_cuda.begin(),doRandomFloats());
-			thrust::fill(net_cuda.begin(),net_cuda.end(),0.0f);
-			thrust::fill(beta_cuda.begin(),beta_cuda.end(),0.0f);
-			thrust::fill(prevBiasDelta_cuda.begin(),prevBiasDelta_cuda.end(),0.0f);
-			//auto iterBegin1=thrust::make_transform_iterator(begin2,sendRandNeuronWeights);
-			//auto iterEnd1=thrust::make_transform_iterator(end2,sendRandNeuronWeights);
-			//thrust::reduce(iterBegin1,iterEnd1,0,thrust::plus<ULLI>());
-			outputsIndex=totalNeurons-out;
-			numOutputs_int=out;
-			numOutputs_cuda=(float)out;
-			StepSize_cuda=(float)StepSize;
-			StepSizeAcc_cuda=0.1f*StepSize_cuda;
 		}
 	};
 	~neuralNet(){};
@@ -331,75 +134,25 @@ public:
 	void saveWeights(string filename);
 
 	void train_cuda(vector<float> &data, vector<float> &labels, float desiredError, ULLI max_cycles, ULLI pItem_size, ULLI setSize) {
-		LastRMS_cuda=99.9f;
-		ULLI outerEpoch=0;
-		minRMS_cuda=1000000.0f;
-		toDivideRMS_cuda=((float)setSize)*numOutputs_cuda;
+		//LastRMS_cuda=99.9f;
+		//ULLI outerEpoch=0;
+		//minRMS_cuda=1000000.0f;
+		//toDivideRMS_cuda=((float)setSize)*numOutputs_cuda;
 		dataSetSize=setSize;
 		item_size=pItem_size;
 		label_size=numOutputs_int;
-		RMS_cuda=0.0f;
+		//RMS_cuda=0.0f;
 
-		//data_cuda=device_vector<float>(pItem_size*setSize);
-		//thrust::copy(data.begin(),data.end(),data_cuda.begin());
 		float *temp=&data[0];
 		ULLI len=data.size();
-		data_cuda=device_vector<float>(temp, temp+len);
-		//for(int i=0;i<item_size;++i) {
-		//	cout << "cuda: " << data_cuda[i] << /*" temp: " << temp[i] << */" data: " << data[i] << endl;
-		//}
+		//data_cuda=device_vector<float>(temp, temp+len);
+
 		float *temp2=&labels[0];
 		ULLI len2=labels.size();
-		labels_cuda=device_vector<float>(temp2,temp2+len2);
-
-		forwardFunctor=forwardProp_functor(connectionWeights_cuda.data().get(),net_cuda.data().get(),
-			sizesOfMatrix_cuda.data().get(),layers,biasWeight_cuda.data().get(),
-			connectionWeightsStart.data().get(),neuronsStart.data().get());
-
-		backProp=backProp_first(connectionWeights_cuda.data().get(),net_cuda.data().get(),
-			sizesOfMatrix_cuda.data().get(),layers,biasWeight_cuda.data().get(),
-			connectionWeightsStart.data().get(),neuronsStart.data().get(),Momentum_cuda,StepSize_cuda,StepSizeAcc_cuda,
-			prevDelta_cuda.data().get(),prevBiasDelta_cuda.data().get(),beta_cuda.data().get());
-
-		cout << "Started training..." << endl;
-		//while(LastRMS_cuda > desiredError && outerEpoch<max_cycles) {
-		while(outerEpoch<max_cycles) {
-
-			for(ULLI i=0;i<dataSetSize;++i) {
-				forwardProp_cuda(i);
-				backwardProp_cuda(i);
-				//cout << "item: " << i << " of " << dataSetSize << "\r";
-			}
-			++epoch;
-			LastRMS_cuda=sqrt(RMS_cuda/toDivideRMS_cuda);
-			printf("Epoch: %llu\t Last RMS Error: %.15f\t min RMS: %.15f\r",epoch,LastRMS_cuda,minRMS_cuda);
-			RMS_cuda=0.0f;
-			if(epoch>1) {
-				if(PrevRMSError_cuda<LastRMS_cuda) {
-					divergingCheck=0;
-					StepSize_cuda*=0.95;
-					StepSizeAcc_cuda=0.1*StepSize_cuda;
-				} else if(PrevRMSError_cuda>LastRMS_cuda) {
-					++divergingCheck;
-					if(divergingCheck==5) {
-						StepSize_cuda+=0.04;
-						StepSizeAcc_cuda=0.1*StepSize_cuda;
-						divergingCheck=0;
-					}
-				} else {
-					divergingCheck=0;
-				}
-			}
-			if(LastRMS_cuda<minRMS_cuda) {
-				minRMS_cuda=LastRMS_cuda;
-				//printf("Epoch: %llu\t Last RMS Error: %.15f\t min RMS: %.15f\r",epoch,LastRMS_cuda,minRMS_cuda);
-				printOutputsForSet_cuda(data_cuda,labels_cuda);
-			}
-			PrevRMSError_cuda=LastRMS_cuda;
-			++outerEpoch;
-		}
-		printOutputsForSet_cuda(data_cuda,labels_cuda);
-		cout << "Training done: Cycles: " << outerEpoch << " Error: " << LastRMS_cuda << " minRMS: " << minRMS_cuda << "\n";
+		//labels_cuda=device_vector<float>(temp2,temp2+len2);
+		
+		//printOutputsForSet_cuda(data_cuda,labels_cuda);
+		//cout << "Training done: Cycles: " << outerEpoch << " Error: " << LastRMS_cuda << " minRMS: " << minRMS_cuda << "\n";
 	}
 
 	void train(vector<vector<neuron_t>> &data, vector<vector<double>> &labels, double desiredError, ULLI max_cycles) {
@@ -426,7 +179,7 @@ public:
 			}
 			++epoch;
 			LastRMS=sqrt(RMS/toDivideRMS);
-			//printf("Epoch: %llu\t Last RMS Error: %.15f\t min RMS: %.15f\r",epoch,LastRMS,minRMS);
+			printf("Epoch: %llu\t Last RMS Error: %.15f\t min RMS: %.15f\r",epoch,LastRMS,minRMS);
 			RMS=0.0;
 			if(epoch>1) {
 				if(PrevRMSError<LastRMS) {
@@ -455,18 +208,19 @@ public:
 			++outerEpoch;
 		}
 		printOutputsForSet(data,labels);
-		cout << "Training done: Cycles: " << outerEpoch << " Error: " << LastRMS << " minRMS: " << minRMS << "\n";
+		printf("Training done: Cycles: %llu Error: %.15f\n",outerEpoch,minRMS);
+		//cout << "Training done: Cycles: " << outerEpoch << " Error: " << LastRMS << " minRMS: " << minRMS << "\n";
 	}
 
-	void printOutputsForSet_cuda(device_vector<float> &data, device_vector<float> &labels) {
+	/*void printOutputsForSet_cuda(device_vector<float> &data, device_vector<float> &labels) {
 		cout << endl;
 		for(size_t i=0;i<dataSetSize;++i) {
 			forwardProp_cuda(i);
-			/*cout << "Inputs: ";
-			for(auto n:net[0]) {
-				cout << n.value << " ";
-			}
-			cout << endl;//*/
+			//cout << "Inputs: ";
+			//for(auto n:net[0]) {
+			//	cout << n.output << " ";
+			//}
+			//cout << endl;
 			cout << "Output:\t\t";
 			for(size_t j=0;j<numOutputs_int;++j) {
 				//printf("%.6f ",net_cuda[outputsIndex+j]);
@@ -482,7 +236,7 @@ public:
 		}
 		printf("Epoch: %llu\t Last RMS Error: %.15f\t min RMS: %.15f\n",epoch,LastRMS_cuda,minRMS_cuda);
 		cout << "-------------------------------------\n";
-	}
+	}*/
 
 	void printOutputsForSet(vector<vector<neuron_t>> &data, vector<vector<double>> &labels) {
 		cout << endl;
@@ -490,13 +244,13 @@ public:
 			forwardProp(data[i]);
 			cout << "Inputs: ";
 			for(auto n:net[0]) {
-				cout << n.value << " ";
+				cout << n.output << " ";
 			}
 			cout << endl;//*/
 			cout << "Output:\t\t";
 			for(size_t j=0;j<numOutputs_int;++j) {
-				printf("%.10f ",net[outputsIndex][j].value);
-				//cout << net[outputsIndex][j].value << " ";
+				printf("%.10f ",net[outputsIndex][j].output);
+				//cout << net[outputsIndex][j].output << " ";
 			}
 			cout << endl;
 			cout << "Expected:\t";
@@ -518,7 +272,7 @@ public:
 			cout << "Layer: " << layer++ << endl;
 			int neuron=0;
 			for(auto nn:n) {
-				cout << "Neuron: " << neuron++ << " value: " << nn.value << " biasWeight: " << nn.biasWeight << " prevBiasDelta: " << nn.prevBiasDelta << " beta: " << nn.beta << endl;
+				cout << "Neuron: " << neuron++ << " value: " << nn.output << " biasWeight: " << nn.biasWeight << " prevBiasDelta: " << nn.prevBiasDelta << " beta: " << nn.beta << endl;
 			}
 			cout << endl;
 		}
@@ -537,40 +291,20 @@ private:
 	vector<vector<neuron_t>> net;
 	vector<vector<connectionWeights_t>> connectionWeights;
 
-	//device_vector<neuron_float_t> net_cuda;
-	device_vector<float> net_cuda;
-	device_vector<float> biasWeight_cuda;
-	device_vector<float> beta_cuda;
-	device_vector<float> prevBiasDelta_cuda;
-	device_vector<float> tempFloats;
-	ULLI maxSize;
-	device_vector<ULLI> connectionWeightsStart;
-	vector<ULLI> connectionWeightsStart_host;
-	device_vector<ULLI> neuronsStart;
-	vector<ULLI> neuronsStart_host;
-	forwardProp_functor forwardFunctor;
-	backProp_first backProp;
-
-	//device_vector<connectionWeights_float_t> connectionWeights_cuda;
-	device_vector<float> connectionWeights_cuda;
-	device_vector<float> prevDelta_cuda;
-
-	vector<int> sizeHiddenMatrix_host;
-	device_vector<int> sizesOfMatrix_cuda;
-	device_vector<float> data_cuda;
-	device_vector<float> labels_cuda;
 	ULLI item_size;
 	ULLI label_size;
 
 	double RMS, LastRMS, StepSize, StepSizeAcc, Momentum, PrevRMSError;
 	double numOutputs, minRMS, toDivideRMS, cost;
-	float numOutputs_cuda, minRMS_cuda, toDivideRMS_cuda;
-	float RMS_cuda, LastRMS_cuda, StepSize_cuda, StepSizeAcc_cuda, Momentum_cuda, PrevRMSError_cuda;
+
 	ULLI divergingCheck, epoch, outputsIndex, numOutputs_int;
 	ULLI dataSetSize;
 	ULLI layers;
 	ULLI totalConnectionWeights;
 	ULLI totalNeurons;
+
+	//float numOutputs_cuda, minRMS_cuda, toDivideRMS_cuda;
+	//float RMS_cuda, LastRMS_cuda, StepSize_cuda, StepSizeAcc_cuda, Momentum_cuda, PrevRMSError_cuda;
 
 	__host__ __device__ double sigmoid(const double x) {
 		return 1.0 / (1.0 + exp(-x));
@@ -587,49 +321,15 @@ private:
 		net[0]=item;
 		for(size_t i=1;i<net.size();++i) {
 			for(size_t j=0;j<net[i].size();++j) {
-				net[i][j].value=0.0;
+				net[i][j].output=0.0;
 				net[i][j].beta=0.0;
 				ULLI JxN=j*net[i-1].size();
 				for(size_t k=0;k<net[i-1].size();++k) {
-					net[i][j].value+=net[i-1][k].value*connectionWeights[i-1][JxN+k].weight;
+					net[i][j].output+=net[i-1][k].output*connectionWeights[i-1][JxN+k].weight;
 				}
-				net[i][j].value+=net[i][j].biasWeight;
-				net[i][j].value=sigmoid(net[i][j].value);
+				net[i][j].output+=net[i][j].biasWeight;
+				net[i][j].output=sigmoid(net[i][j].output);
 			}
-		}
-	}
-
-	void forwardProp_cuda(ULLI item) {
-
-		thrust::fill(net_cuda.begin(),net_cuda.end(),0.0f);
-		thrust::copy(data_cuda.begin()+(item*item_size),data_cuda.begin()+((item+1)*item_size),net_cuda.begin());
-		thrust::fill(beta_cuda.begin(),beta_cuda.end(),0.0f);
-
-		ULLI layerIndex=sizeHiddenMatrix_host[0];
-		ULLI layerSize=layerIndex+sizeHiddenMatrix_host[1];
-		int end=layers-1;
-		for(int i=0;i<end;++i) {
-			forwardFunctor.update(i);
-			thrust::for_each(thrust::make_counting_iterator(layerIndex),thrust::make_counting_iterator(layerSize),forwardFunctor);
-			layerIndex=layerSize;
-			layerSize+=sizeHiddenMatrix_host[i+2];
-		}
-		//cout << "item: " << item << " epoch: " << epoch << endl;
-	}
-	void backwardProp_cuda(ULLI label) {
-		thrust::transform(labels_cuda.begin()+(label*label_size),labels_cuda.begin()+((label+1)*label_size),net_cuda.begin()+outputsIndex,beta_cuda.begin()+outputsIndex,thrust::minus<float>());
-		thrust::transform(beta_cuda.begin()+outputsIndex,beta_cuda.end(),beta_cuda.begin()+outputsIndex,beta_cuda.begin()+outputsIndex,thrust::multiplies<float>());
-		RMS_cuda+=thrust::reduce(beta_cuda.begin()+outputsIndex,beta_cuda.end(),0.0f,thrust::plus<float>());
-		cout << RMS_cuda << endl;
-		exit(0);
-		thrust::transform(beta_cuda.begin()+outputsIndex,beta_cuda.end(),beta_cuda.begin()+outputsIndex,beta_cuda.begin()+outputsIndex,thrust::divides<float>());
-		ULLI lastHiddenIndex;
-		ULLI lastHiddenSize;
-		for(int i=layers-1;i>0;--i) {
-			lastHiddenIndex=neuronsStart_host[i];
-			lastHiddenSize=neuronsStart_host[i+1];
-			backProp.updateThree(Momentum_cuda,StepSize_cuda,StepSizeAcc_cuda,i);
-			thrust::for_each(thrust::make_counting_iterator(lastHiddenIndex),thrust::make_counting_iterator(lastHiddenSize),backProp);
 		}
 	}
 
@@ -639,20 +339,22 @@ private:
 		ULLI lastHiddenIndex=net.size()-2;
 		ULLI connectionWeightsIndex=connectionWeights.size()-1;
 		for(size_t i=0;i<numOutputs_int;++i) {
-			tempBeta=label[i]-net[outputsIndex][i].value;
+			tempBeta=label[i]-net[outputsIndex][i].output;
 			net[outputsIndex][i].beta=tempBeta;
 			RMS+=tempBeta*tempBeta;
 			ULLI IxN=lastHiddenSize*i;
-			tempActivation=sigmoid_derivative(net[outputsIndex][i].value);
+			tempActivation=sigmoid_derivative(net[outputsIndex][i].output);
 			for(size_t j=0;j<lastHiddenSize;++j) {
 				net[lastHiddenIndex][j].beta+=connectionWeights[connectionWeightsIndex][IxN+j].weight*tempActivation*tempBeta;
-				deltaweight=net[lastHiddenIndex][j].value*tempBeta;
-				//deltaweight=net[lastHiddenIndex][j].value*net[outputsIndex][i].beta*sigmoid_derivative(net[outputsIndex][i].value);
-				connectionWeights[connectionWeightsIndex][IxN+j].weight+=(StepSize*deltaweight)+(Momentum*connectionWeights[connectionWeightsIndex][IxN+j].prevDelta);
+				deltaweight=net[lastHiddenIndex][j].output*tempBeta;
+				//deltaweight=net[lastHiddenIndex][j].output*net[outputsIndex][i].beta*sigmoid_derivative(net[outputsIndex][i].output);
+				//connectionWeights[connectionWeightsIndex][IxN+j].weight+=(StepSize*deltaweight)+(Momentum*connectionWeights[connectionWeightsIndex][IxN+j].prevDelta);
+				connectionWeights[connectionWeightsIndex][IxN+j].weight+=StepSize*deltaweight+connectionWeights[connectionWeightsIndex][IxN+j].prevDelta;
 				connectionWeights[connectionWeightsIndex][IxN+j].prevDelta=deltaweight;
 			}
-			//deltaweight=net[outputsIndex][i].beta+sigmoid_derivative(net[outputsIndex][i].value);
-			net[outputsIndex][i].biasWeight+=(StepSize*tempBeta)+(Momentum*net[outputsIndex][i].prevBiasDelta);
+			//deltaweight=net[outputsIndex][i].beta+sigmoid_derivative(net[outputsIndex][i].output);
+			//net[outputsIndex][i].biasWeight+=(StepSize*tempBeta)+(Momentum*net[outputsIndex][i].prevBiasDelta);
+			net[outputsIndex][i].biasWeight+=StepSize*tempBeta+net[outputsIndex][i].prevBiasDelta;
 			net[outputsIndex][i].prevBiasDelta=tempBeta;
 			//yes,3,inf,yes//no,3,inf,yes
 		}
@@ -660,16 +362,18 @@ private:
 		while(lastHiddenIndex>0) {
 			for(size_t i=0;i<net[lastHiddenIndex].size();++i) {
 				ULLI IxN=i*net[lastHiddenIndex-1].size();
-				for(size_t j=0;j<net[lastHiddenIndex-1].size();++j) {	
-					net[lastHiddenIndex-1][j].beta+=connectionWeights[connectionWeightsIndex][IxN+j].weight*sigmoid_derivative(net[lastHiddenIndex][i].value)*net[lastHiddenIndex][i].beta;
-					deltaweight=net[lastHiddenIndex-1][j].value*sigmoid_derivative(net[lastHiddenIndex][i].value)*net[lastHiddenIndex][i].beta;
-					connectionWeights[connectionWeightsIndex][IxN+j].weight+=(StepSizeAcc*deltaweight)+(Momentum*connectionWeights[connectionWeightsIndex][IxN+j].prevDelta);
+				for(size_t j=0;j<net[lastHiddenIndex-1].size();++j) {
+					deltaweight=net[lastHiddenIndex-1][j].output*sigmoid_derivative(net[lastHiddenIndex][i].output)*net[lastHiddenIndex][i].beta;
+					//connectionWeights[connectionWeightsIndex][IxN+j].weight+=(StepSizeAcc*deltaweight)+(Momentum*connectionWeights[connectionWeightsIndex][IxN+j].prevDelta);
 					//connectionWeights[connectionWeightsIndex][IxN+j].weight+=(StepSize*deltaweight)+(Momentum*connectionWeights[connectionWeightsIndex][IxN+j].prevDelta);
+					connectionWeights[connectionWeightsIndex][IxN+j].weight+=StepSize*deltaweight+connectionWeights[connectionWeightsIndex][IxN+j].prevDelta;
 					connectionWeights[connectionWeightsIndex][IxN+j].prevDelta=deltaweight;
+					net[lastHiddenIndex-1][j].beta+=connectionWeights[connectionWeightsIndex][IxN+j].weight*sigmoid_derivative(net[lastHiddenIndex][i].output)*net[lastHiddenIndex][i].beta;
 				}
-				deltaweight=net[lastHiddenIndex][i].beta*sigmoid_derivative(net[lastHiddenIndex][i].value);
-				net[lastHiddenIndex][i].biasWeight+=(StepSizeAcc*deltaweight)+(Momentum*net[lastHiddenIndex][i].prevBiasDelta);
+				deltaweight=net[lastHiddenIndex][i].beta*sigmoid_derivative(net[lastHiddenIndex][i].output);
+				//net[lastHiddenIndex][i].biasWeight+=(StepSizeAcc*deltaweight)+(Momentum*net[lastHiddenIndex][i].prevBiasDelta);
 				//net[lastHiddenIndex][i].biasWeight+=(StepSize*deltaweight)+(Momentum*net[lastHiddenIndex][i].prevBiasDelta);
+				net[lastHiddenIndex][i].biasWeight+=StepSize*deltaweight+net[lastHiddenIndex][i].prevBiasDelta;
 				net[lastHiddenIndex][i].prevBiasDelta=deltaweight;
 			}
 			--connectionWeightsIndex;
@@ -696,10 +400,40 @@ private:
 	}
 };
 
+double sigmoid(double x) {
+	return 1.0 / (1.0 + exp(-x));
+}
+double sigmoid_derivative(double x) {
+	return x*(1.0-x);
+}
+/*void printNet(vector<neuron_t> &net, vector<int> &hiddenMatrix) {
+	ULLI maxElement=*max_element(hiddenMatrix.begin(),hiddenMatrix.end());
+	ULLI layers=hiddenMatrix.size();
+	for(ULLI i=0;i<maxElement;++i) {
+		for(ULLI j=0;j<layers;++j) {
+			if(i<hiddenMatrix[i]) {
+				printf("");
+			}
+		}
+	}
+}*/
+
 //Made a separate 'doMain' function (as opposed to 'int main' in order to not have to constantly work
 //around the OpenMPI directives(among other things) in 'int main'  Just makes it easier to
 //work with.
 void doMain(int my_rank, string hostname, int num_nodes) {
+
+
+
+	//Testing arrays for device_vectors
+	/*int x=4,y=5;
+	device_vector<float> connWeights[x][y];
+	connWeights[0][0]=device_vector<float>(10);
+	thrust::sequence(connWeights[0][0].begin(),connWeights[0][0].end(),0,1);
+	for(auto a:connWeights[0][0]) {
+		cout << a << endl;
+	}
+	return;*/
 	////////////////////////////////////////////////////////////////////
 	//This section isn't used currently.  Was used to test if I was reading
 	//in the pictures from the MNIST dataset properly
@@ -875,24 +609,129 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	//count in binary  input:  0 0 0 0 to output: 0 0 0 1
 
 	vector<int> hiddenMatrix;
-	hiddenMatrix.push_back(BITS+(BITS/2));
-	neuralNet test(BITS,BITS,hiddenMatrix,false);
-	vector<vector<neuron_t>> countingTest;
-	vector<vector<double>> countingLabels;
+	//hiddenMatrix.push_back(BITS+(BITS/2));
+	//hiddenMatrix.push_back(BITS+(BITS/2));
+	for(int i=0;i<2;++i) {
+		hiddenMatrix.push_back(BITS+(BITS/2));
+		//hiddenMatrix.push_back(12);
+	}
+	//neuralNet test(BITS,BITS,hiddenMatrix,false);
+	//vector<vector<neuron_t>> countingTest;
+	//vector<vector<double>> countingLabels;
 	int size=pow(2,BITS);
+	double toDivideRMS=((double)size)*(double)BITS;
+	double RMS=0.0;
+	vector<neuron_t> countingTest[size];
+	vector<double> countingLabels[size];
 	for(int i=0;i<size;++i) {
-		countingTest.push_back(vector<neuron_t>(BITS));
-		countingLabels.push_back(vector<double>(BITS,0.0));
+		//countingTest.push_back(vector<neuron_t>(BITS));
+		//countingLabels.push_back(vector<double>(BITS,0.0));
+		countingLabels[i]=vector<double>(BITS,0.0);
+		countingTest[i]=vector<neuron_t>(BITS);
 		for(int j=0;j<BITS;++j) {
-			countingTest.back()[j].value=(double)bitset<BITS>(i)[(BITS-1)-j];
-			countingLabels.back()[j]=(double)bitset<BITS>((i+1)%size)[(BITS-1)-j];
+			//countingTest.back()[j].output=(double)bitset<BITS>(i)[(BITS-1)-j];
+			//countingLabels.back()[j]=(double)bitset<BITS>((i+1)%size)[(BITS-1)-j];
+			countingTest[i][j].output=(double)bitset<BITS>(i)[(BITS-1)-j];
+			countingLabels[i][j]=(double)bitset<BITS>((i+1)%size)[(BITS-1)-j];
 		}
 	}
-	test.train(countingTest,countingLabels,0.0001,1000000);
+	//test.train(countingTest,countingLabels,0.00001,1000000);
+	hiddenMatrix.insert(hiddenMatrix.begin(),BITS);
+	hiddenMatrix.push_back(BITS);
+	ULLI maxElement=*max_element(hiddenMatrix.begin(),hiddenMatrix.end());
+	ULLI layers=hiddenMatrix.size();
+	vector<neuron_t> net[layers];
+	vector<double> connWeights[layers-1][maxElement];
+	int index=0;
+	for(auto h:hiddenMatrix) {
+		net[index++]=vector<neuron_t>(h);
+	}
+	for(ULLI i=0;i<layers-1;++i) {
+		for(ULLI j=0;j<maxElement;++j) {
+			connWeights[i][j]=vector<double>(maxElement);
+			for(ULLI k=0;k<maxElement;++k) {
+				connWeights[i][j][k]=((((double)rand())/((double)RAND_MAX))*2.0)-1.0;
+			}
+		}
+	}
+	ULLI outputsIndex=layers-1;
+	double learningRate=0.9;
+	double RMSwanted=0.0001;
+	double temp;
+	RMS=100000.0;
+	double minRMS=100000.0;
+	int maxIter=10000000;
+	for(int ii=0;ii<maxIter && RMSwanted<RMS;++ii) {
+		RMS=0.0;
+		for(int iii=0;iii<size;++iii) {
+
+			//forward
+			net[0]=countingTest[iii];
+			for(int i=1;i<layers;++i) {
+				for(int j=0;j<hiddenMatrix[i];++j) {
+					net[i][j].input=0.0;
+					for(int k=0;k<hiddenMatrix[i-1];++k) {
+						net[i][j].input+=connWeights[i-1][k][j]*net[i-1][k].output;
+					}
+					net[i][j].output=sigmoid(net[i][j].input);
+					net[i][j].localDerivative=sigmoid_derivative(net[j][i].output);
+					//printf("net[%d][%d].output: %.15f derivative: %.15f\n",i,j,net[i][j].output,net[i][j].localDerivative);
+				}
+			}
+
+			//backProp
+			for(int i=0;i<BITS;++i) {
+				temp=(net[outputsIndex][i].output-countingLabels[iii][i])*net[outputsIndex][i].localDerivative;
+				//temp=net[outputsIndex][i].output-countingLabels[iii][i];
+				net[outputsIndex][i].errorSignal=temp;
+				RMS+=temp*temp;
+			}
+			for(int i=layers-2;i>-1;--i) {
+				for(int j=0;j<hiddenMatrix[i];++j) {
+					net[i][j].errorSignal=0.0;
+					for(int k=0;k<hiddenMatrix[i+1];++k) {
+						net[i][j].errorSignal+=connWeights[i][j][k]*net[i+1][k].errorSignal;
+						connWeights[i][j][k]-=learningRate*net[i+1][k].errorSignal*net[i][j].output;
+					}
+					net[i][j].errorSignal*=net[i][j].output*(1.0-net[i][j].output);
+				}
+			}
+		}
+		RMS=sqrt(RMS/toDivideRMS);
+		if(RMS<minRMS) {
+			minRMS=RMS;
+			//printf("minRMS Error: %.15f Iteration: %d",RMS,ii);
+		}
+		printf("current RMS: %.15f minRMS Error: %.15f Iteration: %d of %d\r",RMS,minRMS,ii,maxIter);
+	}
+	cout << endl;
+	for(int ii=0;ii<size;++ii) {
+		net[0]=countingTest[ii];
+		cout << "Inputs: ";
+		for(auto i:net[0]) {
+			printf("%.15f ",i.output);
+		}		
+		for(int i=1;i<layers;++i) {
+			for(int j=0;j<hiddenMatrix[i];++j) {
+				net[i][j].input=0.0;
+				for(int k=0;k<hiddenMatrix[i-1];++k) {
+					net[i][j].input+=connWeights[i-1][k][j]*net[i-1][k].output;
+				}
+				net[i][j].output=sigmoid(net[i][j].input);
+				net[i][j].localDerivative=sigmoid_derivative(net[j][i].output);
+			}
+		}
+		cout << endl << "Output: ";
+		for(auto o:net[outputsIndex]) {
+			printf("%.15f ",o.output);
+		}
+		cout << endl;		
+	}
+
 	return;//*/
 
 	////////////////////
-	//I don't remember what this code was for...oh, I was outputting a bitmap
+	//I was outputting a bitmap
 	//to disk in order to see if I was reading in the MNIST 28x28 pictures correctly
 	//Since I'm sure I'm doing that correctly, I could probably remove this code.
 	//....I suppose...whatever
@@ -1032,7 +871,7 @@ void ReadMNIST_neuron_t(string filename, int NumberOfImages, int DataOfAnImage, 
                 for(int c=0;c<n_cols;++c) {
                     UNCHAR temp=0;
                     file.read((char*)&temp,sizeof(temp));
-                    arr[i][(n_rows*r)+c].value = ((double)temp)/256.0;
+                    arr[i][(n_rows*r)+c].output = ((double)temp)/256.0;
                 }
             }
         }
