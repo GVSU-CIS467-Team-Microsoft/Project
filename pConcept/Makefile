@@ -11,4 +11,4 @@ clean:
 	rm -f pConcept
 
 copy:
-	cp pConcept.cpp pConcept.cu
+	cp pConcept2.cpp pConcept.cu
