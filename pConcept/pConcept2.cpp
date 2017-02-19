@@ -50,6 +50,7 @@ using nanoSec = std::chrono::nanoseconds;
 void ReadMNIST_float(string filename, int NumberOfImages, int DataOfAnImage, vector<vector<float>> &arr);
 
 typedef thrust::tuple<ULLI, ULLI> uTuple;
+typedef thrust::tuple<double, double> dTuple;
 struct floatToDoubleFunctor : public thrust::unary_function<float,double> {
 	__device__ double operator()(float t) {
 		return (double)t;
@@ -57,7 +58,7 @@ struct floatToDoubleFunctor : public thrust::unary_function<float,double> {
 };
 
 struct doRandomDoubles {
-	__device__ double operator()(double t) {
+	__device__ double operator()(ULLI t) {
 		thrust::default_random_engine defRandEngine;
 		thrust::uniform_real_distribution<double> uniRealDist;
 		defRandEngine.discard(t);
@@ -68,16 +69,58 @@ struct doRandomDoubles {
 struct forwardProp_functor : public thrust::unary_function<double,double> {
 	double *connWeights;
 	double in;
-	ULLI size;
-	forwardProp_functor(double _in, double  *_connWeights, ULLI _size) : in(_in), connWeights(_connWeights), size(_size) {}
+	ULLI ssize;
+	forwardProp_functor(double _in, double  *_connWeights, ULLI _size) : in(_in), connWeights(_connWeights), ssize(_size) {}
 
 	__device__ double operator()(double t) {
 		double out=t;
-		for(int i=0;i<size;++i) {
-			out+=in*connWeights[i];
+		if(in) {
+			//printf("ssize: %llu\n",ssize);
+			for(int i=0;i<ssize;++i) {
+				if(connWeights[i]) {
+					out+=in*connWeights[i];
+					//printf("i: %d t: %.15f out: %.15f size: %llu conn: %.15f\n",i,t,out,ssize,connWeights[i]);
+				}
+			}
 		}
 		return out;
 	}
+};
+struct backwardProp_functor : public thrust::unary_function<double, double> {
+	double *connWeights;
+	double *netErr;
+	ULLI ssize;
+	backwardProp_functor(double *_connWeights, double *_netErr, ULLI _size) : connWeights(_connWeights), netErr(_netErr), ssize(_size){}
+	__device__ double operator()(double t) {
+		double output=t;
+		for(int i=0;i<ssize;++i) {
+			if(connWeights[i] && netErr[i]) {
+				output+=connWeights[i]*netErr[i];
+			}
+		}
+		return output;
+	}
+};
+
+struct weightsUpdater : public thrust::unary_function<double, double> {
+	double *connWeights;
+	double netIJxlRate;
+	ULLI ssize;
+	weightsUpdater(double *_connWeights, double _lRate, double _netIJ, ULLI _size) : connWeights(_connWeights),
+		netIJxlRate(_netIJ*_lRate), ssize(_size){}
+	__device__ double operator()(double t) {
+		double output=t;
+		if(netIJxlRate) {
+			for(int i=0;i<ssize;++i) {
+				output-=connWeights[i]*netIJxlRate;
+			}
+		}
+		return output;
+	}
+};
+
+struct weightsHelper : public thrust::binary_function<double,double,double> {
+  __device__ double operator()(double x, double y) { return x*(y*(1.0-y)); }
 };
 
 struct activationFunc : public thrust::unary_function<double, double> {
@@ -101,33 +144,35 @@ struct square {
 
 class neuralNet {
 public:
-	neuralNet(int _numInputs, int _numOutputs, vector<int> &_hiddenMatrix) : hiddenMatrix(_hiddenMatrix), RMS(DBL_MAX), minRMS(DBL_MAX), epoch(0) {
+	neuralNet(int _numInputs, int _numOutputs, vector<int> &_hiddenMatrix) : hiddenMatrix(_hiddenMatrix), RMS(DBL_MAX), minRMS(DBL_MAX), epoch(0), learningRate(0.98) {
 		numInputs=_numInputs;
 		numOutputs=_numOutputs;
 		hiddenMatrix.insert(hiddenMatrix.begin(),numInputs);
 		hiddenMatrix.push_back(numOutputs);
 	}
 
-	void train(vector<vector<float>> &pData, vector<vector<float>> &pLabels, ULLI maxIter, float RMSwant) {
+	void train(vector<vector<float>> &pData, vector<vector<double>> &pLabels, ULLI maxIter, float RMSwant) {
 
 		cout << "Setting up network...\n";
-		item_size=pData[0].size();
 		RMSwanted=RMSwant;
 		maxEpochs=maxIter;
 		layers=hiddenMatrix.size();
 		outputsIndex=layers-1;
 
 		dataSetSize=pData.size();
+		//dataSetSize=10;
+		toDivideRMS=((double)dataSetSize)*(double)numOutputs;
 		device_vector<float> data[dataSetSize];
-		device_vector<float> labels[dataSetSize];
+		device_vector<double> labels[dataSetSize];
 		float *temp;
+		double *tempd;
 		ULLI len=pData[0].size();
 		ULLI llen=pLabels[0].size();
 		for(int i=0;i<dataSetSize;++i) {
 			temp=&pData[i][0];
 			data[i]=device_vector<float>(temp, temp+len);
-			temp=&pLabels[i][0];
-			labels[i]=device_vector<float>(temp, temp+llen);
+			tempd=&pLabels[i][0];
+			labels[i]=device_vector<double>(tempd, tempd+llen);
 		}
 		//for(int i=0;i<pData[1].size();++i) {
 		//	cout << "got: " << pData[1][i] << " expected: " << data[1][i] << endl;
@@ -148,27 +193,38 @@ public:
 		for(ULLI i=0;i<layers-1;++i) {
 			for(ULLI j=0;j<maxElement;++j) {
 				connWeights[i][j]=device_vector<double>(maxElement);
-				thrust::transform(connWeights[i][j].begin(),connWeights[i][j].end(),connWeights[i][j].begin(),doRandomDoubles());
+				thrust::transform(thrust::make_counting_iterator<ULLI>(0),thrust::make_counting_iterator<ULLI>(maxElement),connWeights[i][j].begin(),doRandomDoubles());
 			}
 		}
 		//forwardProp_functor forwardProp(thrust::device_ptr<double>(net[0].data()), thrust::device_ptr<double>(connWeights[0][0].data()));
 
 		cout << "Starting training...\n";
 
+		ULLI hMany;
 		for(int ii=0;ii<maxEpochs && RMSwanted<RMS;++ii) {
 			RMS=0.0;
 			for(int iii=0;iii<dataSetSize;++iii) {
+				//printf("Item# %d\n",iii);
 
 				//forward
 				thrust::transform(data[iii].begin(),data[iii].end(),net[0].begin(),floatToDoubleFunctor());
 				for(int i=1;i<layers;++i) {
 					thrust::fill(net[i].begin(),net[i].end(),0.0);
 					//auto iterBegin=thrust::make_transform_iterator(net[i].begin(),)
-					ULLI size=hiddenMatrix[i-1];
+					hMany=hiddenMatrix[i];
+					/*for(auto n:net[i]) {
+						double temp=n;
+						printf("net[%d] before: %.15f\n",i,temp);
+					}*/	
+					//printf("k: %d\n",hiddenMatrix[i-1]);
 					for(int k=0;k<hiddenMatrix[i-1];++k) {
-						thrust::transform(net[i].begin(),net[i].end(),net[i].begin(),forwardProp_functor(net[i-1][k],connWeights[i-1][k].data().get(),size));
+						thrust::transform(net[i].begin(),net[i].end(),net[i].begin(),forwardProp_functor(net[i-1][k],connWeights[i-1][k].data().get(),hMany));
 					}
-					thrust::transform(net[i].begin(),net[i].end(),net[i].begin(),activationFunc());
+					/*for(auto n:net[i]) {
+						double temp=n;
+						printf("net[%d] after: %.15f\n",i,temp);
+					}*/
+					thrust::transform(net[i].begin(),net[i].end(),net[i].begin(),activationFunc());				
 					thrust::transform(net[i].begin(),net[i].end(),netLocalDerivatives[i].begin(),derivativeFunc());
 					//thrust::transform(thrust::make_counting_iterator(0),thrust::make_counting_iterator(hiddenMatrix[i]),net[i].begin(),forwardProp);//forwardProp_functor(net[i].data().get(), connWeights[i-1].data().get()));
 					/*ULLI index=0;
@@ -186,65 +242,94 @@ public:
 						//printf("net[%d][%d].output: %.15f derivative: %.15f\n",i,j,net[i][j].output,net[i][j].localDerivative);
 					}*/
 				}
+				//exit(0);
 
 				//backProp
+				/*for(auto n:netErrorSignals[outputsIndex]) {
+					double temp=n;
+					printf("before %.15f\n",temp);
+				}*/
 				thrust::transform(net[outputsIndex].begin(),net[outputsIndex].end(),labels[iii].begin(),netErrorSignals[outputsIndex].begin(),thrust::minus<double>());
+				/*for(auto n:netErrorSignals[outputsIndex]) {
+					double temp=n;
+					printf("after %.15f\n",temp);
+				}
+				exit(0);*/
+				//thrust::transform(labels[iii].begin(),labels[iii].end(),net[outputsIndex].begin(),netErrorSignals[outputsIndex].begin(),thrust::minus<double>());
 				thrust::transform(netErrorSignals[outputsIndex].begin(),netErrorSignals[outputsIndex].end(),netLocalDerivatives[outputsIndex].begin(),netErrorSignals[outputsIndex].begin(),thrust::multiplies<double>());
 				RMS=thrust::transform_reduce(netErrorSignals[outputsIndex].begin(),netErrorSignals[outputsIndex].end(),square<double>(),RMS,thrust::plus<double>());
+				//printf("RMS: %.15f\n",RMS);
 				/*for(int i=0;i<numOutputs;++i) {
 					double tempDouble=(net[outputsIndex][i]-(double)pLabels[iii][i])*netLocalDerivatives[outputsIndex][i];
 					netErrorSignals[outputsIndex][i]=tempDouble;
 					RMS+=tempDouble*tempDouble;
 				}*/
-				for(int i=layers-2;i>-1;--i) {
+				for(int i=layers-2;i>0;--i) {
 					thrust::fill(netErrorSignals[i].begin(),netErrorSignals[i].end(),0.0);
-					thrust::transform(netErrorSignals[i].begin(),netErrorSignals[i].end(),netErrorSignals[i].begin(),backwardProp_func(netErrorSignals[i+1].data().get(),connWeights[i+1][j].data().get()))
+					hMany=hiddenMatrix[i+1];
 					for(int j=0;j<hiddenMatrix[i];++j) {
+						thrust::transform(netErrorSignals[i].begin(),netErrorSignals[i].end(),netErrorSignals[i].begin(),backwardProp_functor(connWeights[i][j].data().get(),netErrorSignals[i+1].data().get(),hMany));
+					}
+					thrust::transform(netErrorSignals[i].begin(),netErrorSignals[i].end(),net[i].begin(),netErrorSignals[i].begin(),weightsHelper());
+					for(int j=0;j<hiddenMatrix[i];++j) {
+						thrust::transform(connWeights[i][j].begin(),connWeights[i][j].end(),connWeights[i][j].begin(),weightsUpdater(netErrorSignals[i+1].data().get(),learningRate,net[i][j],hMany));
+					}
+					/*for(int j=0;j<hiddenMatrix[i];++j) {
 						netErrorSignals[i][j]=0.0;
 						for(int k=0;k<hiddenMatrix[i+1];++k) {
 							netErrorSignals[i][j]+=connWeights[i][j][k]*netErrorSignals[i+1][k];
 							connWeights[i][j][k]-=learningRate*netErrorSignals[i+1][k]*net[i][j];
 						}
 						netErrorSignals[i][j]*=net[i][j]*(1.0-net[i][j]);
-					}
+					}*/
+				}
+				hMany=hiddenMatrix[1];
+				for(int j=0;j<hiddenMatrix[0];++j) {
+					thrust::transform(connWeights[0][j].begin(),connWeights[0][j].end(),connWeights[0][j].begin(),weightsUpdater(netErrorSignals[1].data().get(),learningRate,net[0][j],hMany));
 				}
 			}
 			RMS=sqrt(RMS/toDivideRMS);
 			//RMS=abs(RMS/toDivideRMS);
 			if(RMS<minRMS) {
 				minRMS=RMS;
-				printf("minRMS Error: %.15f Iteration: %d",RMS,ii);
+				//printf("\nminRMS Error: %.15f Iteration: %d",RMS,ii);
 			}
-			//printf("current RMS: %.15f minRMS Error: %.15f Iteration: %d of %llu\r",RMS,minRMS,ii,maxEpochs);
+			printf("current RMS: %.15f minRMS Error: %.15f Iteration: %d of %llu\r",RMS,minRMS,ii,maxEpochs);
+			/*cout << endl << "Output: ";
+			for(auto o:net[outputsIndex]) {
+				double temp=o;
+				printf("%.5f ",temp);
+			}
+			cout << endl;*/
 		}
 		cout << endl;
 		for(int ii=0;ii<dataSetSize;++ii) {
 			thrust::transform(data[ii].begin(),data[ii].end(),net[0].begin(),floatToDoubleFunctor());
-			/*cout << "Inputs: ";
+			cout << "Inputs: ";
 			for(auto i:net[0]) {
-				printf("%.15f ",i);
-			}*/
+				double temp=i;
+				printf("%.15f ",temp);
+			}//*/
 			for(int i=1;i<layers;++i) {
-				for(int j=0;j<hiddenMatrix[i];++j) {
-					net[i][j]=0.0;
-					for(int k=0;k<hiddenMatrix[i-1];++k) {
-						net[i][j]+=connWeights[i-1][k][j]*net[i-1][k];
-					}
-					net[i][j]=sigmoid(net[i][j]);
-					//net[i][j].localDerivative=sigmoid_derivative(net[j][i].output);
+				thrust::fill(net[i].begin(),net[i].end(),0.0);
+				hMany=hiddenMatrix[i];
+				for(int k=0;k<hiddenMatrix[i-1];++k) {
+					thrust::transform(net[i].begin(),net[i].end(),net[i].begin(),forwardProp_functor(net[i-1][k],connWeights[i-1][k].data().get(),hMany));
 				}
+				thrust::transform(net[i].begin(),net[i].end(),net[i].begin(),activationFunc());
 			}
 			cout << endl << "Output: ";
 			for(auto o:net[outputsIndex]) {
-				//printf("%.15f ",o);
+				double temp=o;
+				printf("%.15f ",temp);
 			}
 			cout << endl;		
 		}
 
 	}
 private:
-	ULLI epoch, numTrainingSets, maxElement, layers, maxEpochs;
-	int outputsIndex, dataSetSize, numInputs, numOutputs, item_size;
+	ULLI epoch, maxElement, layers, maxEpochs;
+	int outputsIndex, dataSetSize, numInputs, numOutputs;
 	double RMS, minRMS, toDivideRMS, RMSwanted, learningRate;
 	vector<int> hiddenMatrix;
 
@@ -258,17 +343,48 @@ private:
 	}	
 };
 
+#define BITS 3
 void doMain(int my_rank, string hostname, int num_nodes) {
+
 	vector<int> hiddenMatrix;
-	hiddenMatrix.push_back(784+(784/2));
-	hiddenMatrix.push_back(784+(784/2));
+	//hiddenMatrix.push_back(BITS+(BITS/2));
+	//hiddenMatrix.push_back(BITS+(BITS/2));
+	for(int i=0;i<1;++i) {
+		hiddenMatrix.push_back(BITS+(BITS/2));
+		//hiddenMatrix.push_back(12);
+	}
+	neuralNet test(BITS,BITS,hiddenMatrix);
+	//vector<vector<neuron_t>> countingTest;
+	//vector<vector<double>> countingLabels;
+	int size=pow(2,BITS);
+	vector<vector<float>> countingTest;
+	vector<vector<double>> countingLabels;
+	for(int i=0;i<size;++i) {
+		countingTest.push_back(vector<float>(BITS));
+		countingLabels.push_back(vector<double>(BITS,0.0));
+		//countingLabels[i]=vector<double>(BITS,0.0);
+		//countingTest[i]=vector<neuron_t>(BITS);
+		for(int j=0;j<BITS;++j) {
+			//countingTest.back()[j].output=(double)bitset<BITS>(i)[(BITS-1)-j];
+			//countingLabels.back()[j]=(double)bitset<BITS>((i+1)%size)[(BITS-1)-j];
+			countingTest[i][j]=(float)bitset<BITS>(i)[(BITS-1)-j];
+			countingLabels[i][j]=(double)bitset<BITS>((i+1)%size)[(BITS-1)-j];
+		}
+	}
+	test.train(countingTest,countingLabels,1000000,0.00001);
+
+	/*	
+	vector<int> hiddenMatrix;
+	//hiddenMatrix.push_back(784+(784/2));
+	//hiddenMatrix.push_back(784+(784/2));
+	hiddenMatrix.push_back(13);
 
 	vector<vector<float>> testData(10000);
 	ReadMNIST_float("t10k-images.idx3-ubyte",10000,784,testData);
 	vector<vector<float>> trainData(60000);
 	ReadMNIST_float("train-images.idx3-ubyte",60000,784,trainData);
-	vector<vector<float>> testLabels(10000);
-	vector<vector<float>> trainLabels(60000);
+	vector<vector<double>> testLabels(10000);
+	vector<vector<double>> trainLabels(60000);
 	ifstream file("t10k-labels.idx1-ubyte",ios::binary);
 	if(file.is_open()) {
 		int placeHolder=0;
@@ -279,9 +395,9 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 			file.read((char*)&temp,1);
 			for(UNCHAR j=0;j<10;++j) {
 				if(j==temp) {
-					testLabels[i].push_back(1.0f);
+					testLabels[i].push_back(1.0);
 				} else {
-					testLabels[i].push_back(0.0f);
+					testLabels[i].push_back(0.0);
 				}
 			}
 		}
@@ -297,9 +413,9 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 			file2.read((char*)&temp,1);
 			for(UNCHAR j=0;j<10;++j) {
 				if(j==temp) {
-					trainLabels[i].push_back(1.0f);
+					trainLabels[i].push_back(1.0);
 				} else {
-					trainLabels[i].push_back(0.0f);
+					trainLabels[i].push_back(0.0);
 				}
 			}
 		}
@@ -315,7 +431,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	//intarray2bmp::intarray2bmp("outputtest.bmp",t,(UNCHAR)28,(UNCHAR)28,(UNCHAR)0,(UNCHAR)255);
 
 	neuralNet go(784,10,hiddenMatrix);
-	go.train(trainData,trainLabels,1000000,0.0001);
+	go.train(trainData,trainLabels,1000000,0.0001);//*/
 }
 
 int main(int argc, char *argv[]) {
