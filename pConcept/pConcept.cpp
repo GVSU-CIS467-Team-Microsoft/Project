@@ -611,7 +611,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	vector<int> hiddenMatrix;
 	//hiddenMatrix.push_back(BITS+(BITS/2));
 	//hiddenMatrix.push_back(BITS+(BITS/2));
-	for(int i=0;i<2;++i) {
+	for(int i=0;i<3;++i) {
 		hiddenMatrix.push_back(BITS+(BITS/2));
 		//hiddenMatrix.push_back(12);
 	}
@@ -655,7 +655,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 		}
 	}
 	ULLI outputsIndex=layers-1;
-	double learningRate=0.9;
+	double learningRate=0.98;
 	double RMSwanted=0.0001;
 	double temp;
 	RMS=100000.0;
@@ -674,7 +674,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 						net[i][j].input+=connWeights[i-1][k][j]*net[i-1][k].output;
 					}
 					net[i][j].output=sigmoid(net[i][j].input);
-					net[i][j].localDerivative=sigmoid_derivative(net[j][i].output);
+					net[i][j].localDerivative=sigmoid_derivative(net[i][j].output);
 					//printf("net[%d][%d].output: %.15f derivative: %.15f\n",i,j,net[i][j].output,net[i][j].localDerivative);
 				}
 			}
@@ -682,7 +682,6 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 			//backProp
 			for(int i=0;i<BITS;++i) {
 				temp=(net[outputsIndex][i].output-countingLabels[iii][i])*net[outputsIndex][i].localDerivative;
-				//temp=net[outputsIndex][i].output-countingLabels[iii][i];
 				net[outputsIndex][i].errorSignal=temp;
 				RMS+=temp*temp;
 			}
@@ -698,6 +697,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 			}
 		}
 		RMS=sqrt(RMS/toDivideRMS);
+		//RMS=abs(RMS/toDivideRMS);
 		if(RMS<minRMS) {
 			minRMS=RMS;
 			//printf("minRMS Error: %.15f Iteration: %d",RMS,ii);
@@ -718,7 +718,7 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 					net[i][j].input+=connWeights[i-1][k][j]*net[i-1][k].output;
 				}
 				net[i][j].output=sigmoid(net[i][j].input);
-				net[i][j].localDerivative=sigmoid_derivative(net[j][i].output);
+				//net[i][j].localDerivative=sigmoid_derivative(net[j][i].output);
 			}
 		}
 		cout << endl << "Output: ";
