@@ -1,7 +1,7 @@
 /*******************************************************************************
- * Author(s): Reese De Wind
- * Version: 0.0
- * Created: Wed Feb  1 20:36:05 2017
+ * Author(s): Reese De Wind and Mark Jannenga
+ * Version: 0.1
+ * Created: Wed Feb  19 20:36:05 2017
  *******************************************************************************/
 
 /*
@@ -10,81 +10,72 @@
 
   artifacts must be created when compiling imebra.
  */
-#include </home/jannengm/workspace/CIS467/Project/Imebra_files/library/include/imebra/imebra.h>
-#include <iostream>
 
+/*Something is goofy with my imebra install, so I need to specify the full path*/
+#include </home/jannengm/workspace/CIS467/Project/Imebra_files/library/include/imebra/imebra.h>
+//#include <imebra/imebra.h>
+#include <iostream>
+#include <vector>
+
+using namespace imebra;
 using namespace std;
 
 int main(int argc, char **argv){
     /*Generate an Imebra DataSet object from the .dcm file supplied as standard input*/
     unique_ptr<imebra::DataSet> loadedDataSet(imebra::CodecFactory::load(argv[1]));
 
-//    wstring patientNameCharacter = loadedDataSet->getUnicodeString(imebra::TagId(imebra::tagId_t::PatientName_0010_0010), 0);
-
-    // // A patient's name can contain up to 5 values, representing different interpretations of the same name
-    // // (e.g. alphabetic representation, ideographic representation and phonetic representation)
-    // // Here we retrieve the first 2 interpretations (index 0 and 1)
-//    std::wstring patientNameCharacter2 = loadedDataSet->getUnicodeString(imebra::TagId(0x10, 0x10), 0);
-    // std::wstring patientNameIdeographic2 = loadedDataSet->getUnicodeString(imebra::TagId(0x10, 0x10), 1);
-    std::wstring patientNameCharacter = loadedDataSet->getUnicodeString(imebra::TagId(0x10, 0x10), 0, L"");
-    std::wstring patientNameIdeographic = loadedDataSet->getUnicodeString(imebra::TagId(0x10, 0x10), 1, L"");
-
-    //  std::wcout << patientNameCharacter << "\n";
-    // // Retrieve the first image (index = 0)
+    /*Load the image from the DataSet*/
     std::unique_ptr<imebra::Image> image(loadedDataSet->getImageApplyModalityTransform(0));
 
-    // // Get the color space
+    /*Get the color space (should be MONOCHROME2 for Kaggle DICOM images)*/
     std::string colorSpace = image->getColorSpace();
 
-    // // Get the size in pixels
+    /*Get the size in pixels*/
     std::uint32_t width = image->getWidth();
     std::uint32_t height = image->getHeight();
 
+    /*Output some basic info about the image*/
+    std::cout << "Colorspace: " << colorSpace << std::endl;
     std::cout << "width: " << width << std::endl;
     std::cout << "height: " << height << std::endl;
 
-    wcout << "Name (Character): " << patientNameCharacter << endl;
-    wcout << "Name (Ideaographic): " << patientNameIdeographic << endl;
-
-    /*-------------------------READ PIXEL DATA - SLOW VERSION----------------------------------*/
-
-    // let's assume that we already have the image's size in the variables width and height
-    // (see previous code snippet)
-
-    // Retrieve the data handler
+    /*Create a data handler for the image*/
     std::unique_ptr<imebra::ReadingDataHandlerNumeric> dataHandler(image->getReadingDataHandler());
 
+    /*Create a 2D vector for easy access later*/
+    std::int32_t sum = 0;
+//    std::vector<vector<int32_t>> pixelData;
+//    pixelData.resize(height);
+//    for (int i = 0; i < height; ++i)
+//    {
+//        pixelData[i].resize(width);
+//    }
+
+    /*Calculate the average "color" of the image from -1024 for black to 1024 for white*/
     for(std::uint32_t scanY(0); scanY != height; ++scanY)
     {
         for(std::uint32_t scanX(0); scanX != width; ++scanX)
         {
-            // For monochrome images
-            std::int32_t luminance = dataHandler->getSignedLong(scanY * width + scanX);
-
-            // // For RGB images
-            // std::int32_t r = dataHandler->getSignedLong((scanY * width + scanX) * 3);
-            // std::int32_t g = dataHandler->getSignedLong((scanY * width + scanX) * 3 + 1);
-            // std::int32_t b = dataHandler->getSignedLong((scanY * width + scanX) * 3 + 2);
+//            pixelData[scanY][scanX] = dataHandler->getSignedLong(scanY * width + scanX);
+            sum += dataHandler->getSignedLong(scanY * width + scanX);
         }
     }
 
-    /*-------------------------READ PIXEL DATA - FAST VERSION----------------------------------*/
-    // Retrieve the data handler
-    std::unique_ptr<imebra::ReadingDataHandlerNumeric> dataHandler2(image->getReadingDataHandler());
+    cout << "Average color: " << sum / (double)(height * width) << endl;
 
-    // Get the memory pointer and the size (in bytes)
-    size_t dataLength;
-    const char* data = dataHandler->data(&dataLength);
-
-    // Get the number of bytes per each value (1, 2, or 4 for images)
-    size_t bytesPerValue = dataHandler->getUnitSize();
-
-    // Are the values signed?
-    bool bIsSigned = dataHandler->isSigned();
-
-    // Do something with the pixels...A template function would come handy
-    /*----------------------------------------------------------------------------------------*/
-
+    /*Print ascii art representation the pixel image (zoom waaaay out)*/
+//    for(int i = 0; i < height; ++i) {
+//        for (int j = 0; j < width; ++j) {
+//            if(pixelData[i][j] >= 0){
+//                cout << "# ";
+//            }
+//            else {
+//                cout << "  ";
+//            }
+////            cout << pixelData[i][j] << " ";
+//        }
+//        cout << endl;
+//    }
 
     return 0;
 }
