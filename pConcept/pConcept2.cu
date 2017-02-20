@@ -31,7 +31,7 @@
 #include <thrust/iterator/transform_iterator.h>
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
-#include <mpi.h>
+//#include <mpi.h>
 #include "helper_cuda.h"
 #include "helper_string.h"
 #include "intarray2bmp.hpp"
@@ -40,7 +40,7 @@
 #include <limits.h>
 #include <float.h>
 #include <random>
-#include <imebra/imebra.h>
+//#include <imebra/imebra.h>
 using namespace std;
 using namespace thrust;
 using namespace chrono;
@@ -58,6 +58,20 @@ struct floatToDoubleFunctor : public thrust::unary_function<float,double> {
 	}
 };
 
+__host__ __device__ int translateNN(int layer, int node, int *dimMatrix) {
+	for(int i=0;i<layer;++i) {
+		node+=dimMatrix[i];
+	}
+	return node;
+}
+
+__host__ __device__ int translateConn(int layer, int fromNode, int toNode, int *dimMatrix) {
+	for(int i=0;i<layer;++i) {
+		fromNode+=dimMatrix[i]*dimMatrix[i+1];
+	}
+	return toNode;
+}
+
 struct doRandomDoubles {
 	__device__ double operator()(ULLI t) {
 		thrust::default_random_engine defRandEngine;
@@ -74,17 +88,25 @@ struct forwardProp_functor : public thrust::unary_function<double,double> {
 	forwardProp_functor(double _in, double  *_connWeights, ULLI _size) : in(_in), connWeights(_connWeights), ssize(_size) {}
 
 	__device__ double operator()(double t) {
-		double out=t;
 		if(in) {
 			//printf("ssize: %llu\n",ssize);
 			for(int i=0;i<ssize;++i) {
 				if(connWeights[i]) {
-					out+=in*connWeights[i];
+					t+=in*connWeights[i];
 					//printf("i: %d t: %.15f out: %.15f size: %llu conn: %.15f\n",i,t,out,ssize,connWeights[i]);
 				}
 			}
 		}
-		return out;
+		return t;
+	}
+};
+struct forwardProp_functor2 : public thrust::unary_function<double, double> {
+	double **connWeights;
+	double *netPrev;
+	double *netThis;
+	forwardProp_functor2(double **_connWeights, double *_netPrev, double *_netThis) : connWeights(_connWeights), netPrev(_netPrev), netThis(_netThis) {}
+	__device__ void operator()(ULLI t) {
+
 	}
 };
 struct backwardProp_functor : public thrust::unary_function<double, double> {
@@ -93,13 +115,12 @@ struct backwardProp_functor : public thrust::unary_function<double, double> {
 	ULLI ssize;
 	backwardProp_functor(double *_connWeights, double *_netErr, ULLI _size) : connWeights(_connWeights), netErr(_netErr), ssize(_size){}
 	__device__ double operator()(double t) {
-		double output=t;
 		for(int i=0;i<ssize;++i) {
 			if(connWeights[i] && netErr[i]) {
-				output+=connWeights[i]*netErr[i];
+				t+=connWeights[i]*netErr[i];
 			}
 		}
-		return output;
+		return t;
 	}
 };
 
@@ -183,6 +204,7 @@ public:
 		device_vector<double> netLocalDerivatives[layers];
 		device_vector<double> netErrorSignals[layers];
 		device_vector<double> connWeights[layers-1][maxElement];
+		//device_vector<device_vector<double>> connWeights[layers-1];;
 
 		int index=0;
 		for(auto h:hiddenMatrix) {
@@ -196,7 +218,15 @@ public:
 				connWeights[i][j]=device_vector<double>(maxElement);
 				thrust::transform(thrust::make_counting_iterator<ULLI>(0),thrust::make_counting_iterator<ULLI>(maxElement),connWeights[i][j].begin(),doRandomDoubles());
 			}
-		}
+		}//*/
+		/*for(ULLI i=0;i<layers-1;++i) {
+			connWeights[i]=device_vector<device_vector<double>>(hiddenMatrix[i]);
+			for(int j=0;j<hiddenMatrix[i];++j) {
+				connWeights[i][j]=device_vector<double>(hiddenMatrix[i+1]);
+				thrust::transform(thrust::make_counting_iterator<ULLI>(0),thrust::make_counting_iterator<ULLI>(hiddenMatrix[i+1]),connWeights[i][j].begin(),doRandomDoubles());
+			}
+			//thrust::transform(thrust::make_counting_iterator<ULLI>(0),thrust::make_counting_iterator<ULLI>(maxElement),connWeights[i][j].begin(),doRandomDoubles());
+		}*/
 		//forwardProp_functor forwardProp(thrust::device_ptr<double>(net[0].data()), thrust::device_ptr<double>(connWeights[0][0].data()));
 
 		cout << "Starting training...\n";
@@ -221,6 +251,7 @@ public:
 					for(int k=0;k<hiddenMatrix[i-1];++k) {
 						thrust::transform(net[i].begin(),net[i].end(),net[i].begin(),forwardProp_functor(net[i-1][k],connWeights[i-1][k].data().get(),hMany));
 					}
+					//thrust::for_each(thrust::make_counting_iterator<ULLI>(0),thrust::make_counting_iterator<ULLI>(hMany),forwardProp_functor2(connWeights[i-1].data().get(),net[i-1].data().get(),net[i].data().get()));
 					/*for(auto n:net[i]) {
 						double temp=n;
 						printf("net[%d] after: %.15f\n",i,temp);
@@ -440,7 +471,7 @@ int main(int argc, char *argv[]) {
 	//srandom(time_point_cast<nanoSec>(high_resolution_clock::now()).time_since_epoch().count());
 	srand((unsigned int)time_point_cast<nanoSec>(high_resolution_clock::now()).time_since_epoch().count());
 
-	int my_rank, num_nodes;
+	/*int my_rank, num_nodes;
 	MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &num_nodes);
@@ -448,7 +479,7 @@ int main(int argc, char *argv[]) {
     gethostname(my_host, 100);
     string hostname=string(my_host);
 
-	if(hostname=="quattro.cis.gvsu.edu" || hostname=="ULaptop" || hostname=="Usolid") {
+	if(hostname=="quattro.cis.gvsu.edu" || hostname=="ULaptop" || hostname=="Usolid") {*/
 
 		ULLI totalCudaMem=0;
 		size_t totalFreeCudaMem;
@@ -512,13 +543,15 @@ int main(int argc, char *argv[]) {
 		}
 
 		if(totalCudaMem) {
-			cout << string(my_host) << ": total Cuda Memory: " << totalCudaMem << endl;
+			//cout << string(my_host) << ": total Cuda Memory: " << totalCudaMem << endl;
+			cout << "Total Cuda Memory: " << totalCudaMem << endl;
 		}
-	}
+	/*}
 
 	doMain(my_rank, hostname, num_nodes);
 
-	MPI_Finalize();	
+	MPI_Finalize();*/
+	doMain(0,"",0);
 
 	return 0;
 }
