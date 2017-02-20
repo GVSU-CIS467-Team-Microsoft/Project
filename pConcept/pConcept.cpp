@@ -36,7 +36,7 @@
 #include <thrust/iterator/transform_iterator.h>
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
-#include <mpi.h>
+//#include <mpi.h>
 #include "helper_cuda.h"
 #include "helper_string.h"
 #include "intarray2bmp.hpp"
@@ -62,8 +62,8 @@ using nanoSec = std::chrono::nanoseconds;
 //(Actually I found that this needs to be less complex in order
 //to be easier to work with in Cuda. All these arrays should be separated)
 struct neuron_t {
-	double output=0.0;
 	double input=0.0;
+	double output=0.0;
 	double biasWeight=1.0;
 	double beta=0.0;
 	double prevBiasDelta=0.0;
@@ -608,20 +608,84 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 	//This code just tries to see if I can get the neuralNet to
 	//count in binary  input:  0 0 0 0 to output: 0 0 0 1
 
-	vector<int> hiddenMatrix;
-	//hiddenMatrix.push_back(BITS+(BITS/2));
-	//hiddenMatrix.push_back(BITS+(BITS/2));
-	for(int i=0;i<3;++i) {
-		hiddenMatrix.push_back(BITS+(BITS/2));
-		//hiddenMatrix.push_back(12);
+	vector<vector<neuron_t>> testData;
+	ReadMNIST_neuron_t("t10k-images.idx3-ubyte",10000,784,testData);
+	vector<vector<neuron_t>> trainData;
+	ReadMNIST_neuron_t("train-images.idx3-ubyte",60000,784,trainData);
+	vector<vector<double>> testLabels;
+	vector<vector<double>> trainLabels;
+	ifstream file("t10k-labels.idx1-ubyte",ios::binary);
+	if(file.is_open()) {
+		int placeHolder=0;
+		file.read((char*)&placeHolder,sizeof(placeHolder));
+		file.read((char*)&placeHolder,sizeof(placeHolder));
+		for(int i=0;i<10000;++i) {
+			testLabels.push_back(vector<double>(10));
+			UNCHAR temp=0;
+			file.read((char*)&temp,1);
+			for(UNCHAR j=0;j<10;++j) {
+				if(j==temp) {
+					//testLabels.push_back(1.0);
+					testLabels[i][j]=1.0;
+				} else {
+					//testLabels.push_back(0.0);
+					testLabels[i][j]=0.0;
+				}
+			}
+		}
+		file.close();
 	}
+	ifstream file2("train-labels.idx1-ubyte",ios::binary);
+	if(file2.is_open()) {
+		int placeHolder=0;
+		file2.read((char*)&placeHolder,sizeof(placeHolder));
+		file2.read((char*)&placeHolder,sizeof(placeHolder));
+		for(int i=0;i<60000;++i) {
+			trainLabels.push_back(vector<double>(10));
+			UNCHAR temp=0;
+			file2.read((char*)&temp,1);
+			for(UNCHAR j=0;j<10;++j) {
+				if(j==temp) {
+					//trainLabels.push_back(1.0);
+					trainLabels[i][j]=1.0;
+				} else {
+					//trainLabels.push_back(0.0);
+					trainLabels[i][j]=0.0;
+				}
+			}
+		}
+		file2.close();
+	}
+	vector<int> hiddenMatrix;
+	hiddenMatrix.push_back(784+(784/2));
+	//hiddenMatrix.push_back(784+(784/2));
+	int numOutputs=10;
+	int numInputs=784;
+
+	//vector<int> hiddenMatrix;
+	//hiddenMatrix.push_back(BITS+(BITS/2));
+	//hiddenMatrix.push_back(BITS+(BITS/2));
+	//for(int i=0;i<3;++i) {
+	//	hiddenMatrix.push_back(BITS+(BITS/2));
+		//hiddenMatrix.push_back(12);
+	//}
 	//neuralNet test(BITS,BITS,hiddenMatrix,false);
 	//vector<vector<neuron_t>> countingTest;
 	//vector<vector<double>> countingLabels;
-	int size=pow(2,BITS);
-	double toDivideRMS=((double)size)*(double)BITS;
-	double RMS=0.0;
-	vector<neuron_t> countingTest[size];
+	//int size=pow(2,BITS);
+	int maxIter=10000000;
+	double learningRate=0.98;
+	double RMSwanted=0.0001;
+
+	///////////////////////// Change this size to only work on the first say 1000 items
+	//// in the MNIST data set. There are 60000 items total.
+	int size=1000;
+
+
+	double toDivideRMS=((double)size)*(double)numOutputs;
+	//double toDivideRMS=((double)size)*(double)BITS;
+	double RMS=DBL_MAX;
+	/*vector<neuron_t> countingTest[size];
 	vector<double> countingLabels[size];
 	for(int i=0;i<size;++i) {
 		//countingTest.push_back(vector<neuron_t>(BITS));
@@ -634,10 +698,10 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 			countingTest[i][j].output=(double)bitset<BITS>(i)[(BITS-1)-j];
 			countingLabels[i][j]=(double)bitset<BITS>((i+1)%size)[(BITS-1)-j];
 		}
-	}
+	}*/
 	//test.train(countingTest,countingLabels,0.00001,1000000);
-	hiddenMatrix.insert(hiddenMatrix.begin(),BITS);
-	hiddenMatrix.push_back(BITS);
+	hiddenMatrix.insert(hiddenMatrix.begin(),numInputs);
+	hiddenMatrix.push_back(numOutputs);
 	ULLI maxElement=*max_element(hiddenMatrix.begin(),hiddenMatrix.end());
 	ULLI layers=hiddenMatrix.size();
 	vector<neuron_t> net[layers];
@@ -655,18 +719,25 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 		}
 	}
 	ULLI outputsIndex=layers-1;
-	double learningRate=0.98;
-	double RMSwanted=0.0001;
+
 	double temp;
-	RMS=100000.0;
-	double minRMS=100000.0;
-	int maxIter=10000000;
-	for(int ii=0;ii<maxIter && RMSwanted<RMS;++ii) {
+	double minRMS=DBL_MAX;
+	cout << "Training started...\n";
+	//bool matches=false;
+	vector<double> testIt;
+	int gotRight=0;
+	//int ii=0;
+	//RMSwanted=RMSwanted;
+	//while(!matches) {
+	for(int ii=0;ii<maxIter && RMSwanted<RMS && gotRight!=size;++ii) {
 		RMS=0.0;
+		//matches=true;
 		for(int iii=0;iii<size;++iii) {
+			cout << "Item# " << iii << "\r";
 
 			//forward
-			net[0]=countingTest[iii];
+			//net[0]=countingTest[iii];
+			net[0]=trainData[iii];
 			for(int i=1;i<layers;++i) {
 				for(int j=0;j<hiddenMatrix[i];++j) {
 					net[i][j].input=0.0;
@@ -678,21 +749,39 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 					//printf("net[%d][%d].output: %.15f derivative: %.15f\n",i,j,net[i][j].output,net[i][j].localDerivative);
 				}
 			}
+			/*testIt.clear();
+			//cout << "Output: ";
+			for(auto o:net[outputsIndex]) {
+				testIt.push_back(o.output);
+				//printf("%.10f ",o.output);
+			}
+			//cout << endl << "expect: ";
+			//for(auto o:trainLabels[iii]) {
+			//	printf("%.10f ",o);
+			//}
+			//cout << endl;
+			if(std::distance(trainLabels[iii].begin(),max_element(trainLabels[iii].begin(),trainLabels[iii].end())) != std::distance(testIt.begin(),max_element(testIt.begin(),testIt.end()))) {
+				matches=false;
+			} else {
+				cout << iii << " ";
+			}*/
 
 			//backProp
-			for(int i=0;i<BITS;++i) {
-				temp=(net[outputsIndex][i].output-countingLabels[iii][i])*net[outputsIndex][i].localDerivative;
-				net[outputsIndex][i].errorSignal=temp;
-				RMS+=temp*temp;
+			for(int i=0;i<numOutputs;++i) {
+				//temp=(net[outputsIndex][i].output-countingLabels[iii][i]);//net[outputsIndex][i].localDerivative;
+				temp=(net[outputsIndex][i].output-trainLabels[iii][i]);
+				net[outputsIndex][i].errorSignal=temp;//*sigmoid_derivative(net[outputsIndex][i].input));//*net[outputsIndex][i].localDerivative;
+				RMS+=(temp*temp);
 			}
 			for(int i=layers-2;i>-1;--i) {
 				for(int j=0;j<hiddenMatrix[i];++j) {
 					net[i][j].errorSignal=0.0;
 					for(int k=0;k<hiddenMatrix[i+1];++k) {
-						net[i][j].errorSignal+=connWeights[i][j][k]*net[i+1][k].errorSignal;
-						connWeights[i][j][k]-=learningRate*net[i+1][k].errorSignal*net[i][j].output;
+						net[i][j].errorSignal+=(connWeights[i][j][k]*net[i+1][k].errorSignal);
+						connWeights[i][j][k]-=(learningRate*net[i+1][k].errorSignal*net[i][j].output);
 					}
-					net[i][j].errorSignal*=net[i][j].output*(1.0-net[i][j].output);
+					net[i][j].errorSignal*=net[i][j].localDerivative;
+					//net[i][j].errorSignal*=(net[i][j].output*(1.0-net[i][j].output)); this is the derivative of the output of a node, not and input of a node
 				}
 			}
 		}
@@ -700,32 +789,69 @@ void doMain(int my_rank, string hostname, int num_nodes) {
 		//RMS=abs(RMS/toDivideRMS);
 		if(RMS<minRMS) {
 			minRMS=RMS;
-			//printf("minRMS Error: %.15f Iteration: %d",RMS,ii);
+			//printf("\nminRMS Error: %.15f Iteration: %d\n",RMS,ii);
 		}
-		printf("current RMS: %.15f minRMS Error: %.15f Iteration: %d of %d\r",RMS,minRMS,ii,maxIter);
+		gotRight=0;
+		cout << endl;
+		for(int iii=0;iii<size;++iii) {
+			cout << "Checking item# " << iii << "\r";
+			//net[0]=countingTest[ii];
+			net[0]=trainData[iii];
+			for(int i=1;i<layers;++i) {
+				for(int j=0;j<hiddenMatrix[i];++j) {
+					net[i][j].input=0.0;
+					for(int k=0;k<hiddenMatrix[i-1];++k) {
+						net[i][j].input+=connWeights[i-1][k][j]*net[i-1][k].output;
+					}
+					net[i][j].output=sigmoid(net[i][j].input);
+				}
+			}		
+			testIt.clear();
+			for(auto o:net[outputsIndex]) {
+				testIt.push_back(o.output);
+			}
+			if(std::distance(trainLabels[iii].begin(),max_element(trainLabels[iii].begin(),trainLabels[iii].end())) == std::distance(testIt.begin(),max_element(testIt.begin(),testIt.end()))) {
+				++gotRight;
+			}
+		}
+		printf("\ncurrent RMS: %.15f minRMS Error: %.15f Iteration: %d of %d Got %d out of %d right\n",RMS,minRMS,ii,maxIter,gotRight,size);
+		//++ii;
 	}
 	cout << endl;
+	//for(int ii=0;ii<size;++ii) {
 	for(int ii=0;ii<size;++ii) {
-		net[0]=countingTest[ii];
-		cout << "Inputs: ";
+		//net[0]=countingTest[ii];
+		net[0]=trainData[ii];
+		/*cout << "Inputs: ";
 		for(auto i:net[0]) {
 			printf("%.15f ",i.output);
-		}		
+		}*/
 		for(int i=1;i<layers;++i) {
 			for(int j=0;j<hiddenMatrix[i];++j) {
-				net[i][j].input=0.0;
+				net[i][j].output=0.0;
 				for(int k=0;k<hiddenMatrix[i-1];++k) {
-					net[i][j].input+=connWeights[i-1][k][j]*net[i-1][k].output;
+					net[i][j].output+=connWeights[i-1][k][j]*net[i-1][k].output;
 				}
-				net[i][j].output=sigmoid(net[i][j].input);
+				net[i][j].output=sigmoid(net[i][j].output);
 				//net[i][j].localDerivative=sigmoid_derivative(net[j][i].output);
 			}
 		}
-		cout << endl << "Output: ";
+		//cout << "Item# " << ii << " thinks it's a " << std::distance(net[outputsIndex].begin(),max_element(net[outputsIndex].begin(),net[outputsIndex].end())) << endl;
+		cout << "Output: ";
+		double maxElem=0.0;
+		int outNum=0;
+		int index=0;
 		for(auto o:net[outputsIndex]) {
 			printf("%.15f ",o.output);
+			if(o.output>maxElem) {
+				maxElem=o.output;
+				outNum=index;
+			}
+			++index;
 		}
-		cout << endl;		
+		cout << endl;
+		cout << "item# " << ii << " is probably a " << outNum << " expected: " << std::distance(trainLabels[ii].begin(),max_element(trainLabels[ii].begin(),trainLabels[ii].end()));
+		cout << endl;
 	}
 
 	return;//*/
@@ -753,7 +879,7 @@ int main(int argc, char *argv[]) {
 	srandom(time_point_cast<nanoSec>(high_resolution_clock::now()).time_since_epoch().count());
 	srand((unsigned int)time_point_cast<nanoSec>(high_resolution_clock::now()).time_since_epoch().count());
 
-	int my_rank, num_nodes;
+	/*int my_rank, num_nodes;
 	MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &num_nodes);
@@ -832,7 +958,7 @@ int main(int argc, char *argv[]) {
 	doMain(my_rank, hostname, num_nodes);
 
 	MPI_Finalize();//*/
-	//doMain(0,"",0);
+	doMain(0,"",0);
 
 	return 0;
 }
