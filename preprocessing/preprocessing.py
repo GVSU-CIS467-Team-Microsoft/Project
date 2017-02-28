@@ -35,11 +35,11 @@ def load_scan(path):
         
     for s in slices:
         s.SliceThickness = slice_thickness
-        
     return slices
 
 def get_pixels_hu(slices):
     image = np.stack([s.pixel_array for s in slices])
+    print(slices[0].pixel_array.shape)
     # Convert to int16 (from sometimes int16), 
     # should be possible as values should always be low enough (<32k)
     image = image.astype(np.int16)
@@ -164,24 +164,78 @@ def zero_center(image):
     return image
 
 
-first_patient = load_scan(INPUT_FOLDER + patients[0])
-first_patient_pixels = get_pixels_hu(first_patient)
-plot.hist(first_patient_pixels.flatten(), bins=80, color='c')
-plot.xlabel("Hounsfield Units (HU)")
-plot.ylabel("Frequency")
-plot.show()
 
-# Show some slice in the middle
-plot.imshow(first_patient_pixels[80], cmap=plot.cm.gray)
-plot.show()
+for index, patient in enumerate(patients):
+    patient = load_scan(INPUT_FOLDER + patient)
+    patient_pixels = get_pixels_hu(patient)
+    pixels_resampled, spacing = resample(patient_pixels, patient, [1,1,1])
+    segmented_lungs = segment_lung_mask(pixels_resampled, False)
 
-pix_resampled, spacing = resample(first_patient_pixels, first_patient, [1,1,1])
-print("Shape before resampling\t", first_patient_pixels.shape)
-print("Shape after resampling\t", pix_resampled.shape)
+    with open("patient_{0}.dat".format(index),"w+") as f:
+        for axis in segmented_lungs:
+            f.write("/1\n")
+            for current_slice in axis:
+                f.write("/2\n")
+                for hu_value in current_slice:
+                    f.write(str(hu_value))
+                    f.write(",")
+                f.write('\n')
 
-# plot_3d(pix_resampled, 400)
 
-segmented_lungs = segment_lung_mask(pix_resampled, False)
-segmented_lungs_fill = segment_lung_mask(pix_resampled, True)
+#---------------------------------------------------------------------------------------------------------- load_array.cpp will be based off this                
+# overall_array = []
+# outer_index = -1;
+# inner_index = -1;
+# with open("patient_0.dat", "r") as f:
+#     for line in f:
+#         for s in line.split(','):
+#             s = s.rstrip()
+#             if s == "/1":
+#                 outer_index += 1
+#                 inner_index = -1
+#                 overall_array.append([])
+#             elif s == "/2":
+#                 inner_index += 1
+#                 overall_array[outer_index].append([])
+#             else:
+#                 if s != '':
+#                     overall_array[outer_index][inner_index].append(int(s))
+#---------------------------------------------------------------------------------------------------------- other testing
 
-plot_3d(segmented_lungs, 0)
+
+# print(len(overall_array))
+# print(len(overall_array[0]))
+# print(len(overall_array[0][0]))
+            # first_patient = load_scan(INPUT_FOLDER + patients[0])
+                # first_patient_pixels = get_pixels_hu(first_patient)
+                # plot.hist(first_patient_pixels.flatten(), bins=80, color='c')
+                # plot.xlabel("Hounsfield Units (HU)")
+                # plot.ylabel("Frequency")
+                # plot.show()
+
+# # Show some slice in the middle
+# plot.imshow(first_patient_pixels[80], cmap=plot.cm.gray)
+# plot.show()
+
+# pix_resampled, spacing = resample(first_patient_pixels, first_patient, [1,1,1])
+# print("Shape before resampling\t", first_patient_pixels.shape)
+# print("Shape after resampling\t", pix_resampled.shape)
+
+# # plot_3d(pix_resampled, 400)
+
+# segmented_lungs = segment_lung_mask(pix_resampled, False)
+# segmented_lungs_fill = segment_lung_mask(pix_resampled, True)
+
+
+# print(segmented_lungs)
+# # np.savetxt("foo.csv", segmented_lungs, delimiter=",");
+# segmented_lungs.tofile('foo.csv', sep=',', format='%10.5f')
+# # df = pd.DataFrame(segmented_lungs)
+# print(segmented_lungs.ndim)
+# print(segmented_lungs[0].ndim)
+# print(segmented_lungs[1].ndim)
+
+
+    
+
+# # plot_3d(segmented_lungs, 0)
