@@ -59,6 +59,7 @@ using nanoSec = std::chrono::nanoseconds;
 void ReadMNIST_float(string filename, int NumberOfImages, int DataOfAnImage, vector<vector<float>> &arr);
 void printTime(high_resolution_clock::time_point start, high_resolution_clock::time_point end);
 void print_matrix(device_vector<double> &A, int nr_rows_A, int nr_cols_A);
+bool vlRate=false;
 
 template<typename T>
 struct KernelArray {    
@@ -171,17 +172,27 @@ public:
 	device_vector<double> deltas;
 	device_vector<double> derivatives;
 	device_vector<double> derivTemp;
-	device_vector<double> softmaxTemp;
-	device_vector<double> softmaxOutputs;
 
 	NN_layer(){}
+	NN_layer(int sizeThis, int sizeNext, int pBatchSize, int pType) : 
+			type(pType), thisSize(sizeThis), nextSize(sizeNext), batchSize(pBatchSize) {
+
+		if(type!=OUTPUT) {
+			weightsMatrix=device_vector<double>(thisSize*nextSize);
+		}
+	}
 	NN_layer(int sizeThis, int sizeNext, int pBatchSize, int pType, cublasHandle_t h) : 
 			type(pType), handle(h), thisSize(sizeThis), nextSize(sizeNext), batchSize(pBatchSize) {
 
-		atNeuronOutputs=device_vector<double>(batchSize*sizeThis,0.0);
+		setupLayer(true, h);
+	}
+
+	void setupLayer(bool newLayer, cublasHandle_t h) {
+		atNeuronOutputs=device_vector<double>(batchSize*thisSize,0.0);
+		if(!newLayer) {handle=h;}
 		if(type!=INPUT) {
-			atNeuronInputs=device_vector<double>(batchSize*sizeThis,0.0);
-			deltas=device_vector<double>(batchSize*sizeThis,0.0);
+			atNeuronInputs=device_vector<double>(batchSize*thisSize,0.0);
+			deltas=device_vector<double>(batchSize*thisSize,0.0);
 		} else {
 			cudaFree(&atNeuronInputs);
 			cudaFree(&deltas);
@@ -189,27 +200,31 @@ public:
 			cudaFree(&derivTemp);
 		}
 		if(type!=OUTPUT) {
-			weightsMatrix=device_vector<double>(sizeThis*sizeNext);
-			random_doubles(thrust::raw_pointer_cast(&weightsMatrix[0]),sizeThis,sizeNext);
-			thrust::transform(weightsMatrix.begin(),weightsMatrix.end(),weightsMatrix.begin(),fix_random_numbers());
-			cout << "thisSize: " << thisSize << " sizeNext: " << nextSize << " thisSize*nextSize: " << (thisSize*nextSize) << endl;
-			cudaFree(&softmaxTemp);
-			cudaFree(&softmaxOutputs);
+			if(newLayer) {
+				weightsMatrix=device_vector<double>(thisSize*nextSize);
+				random_doubles(thrust::raw_pointer_cast(&weightsMatrix[0]),thisSize,nextSize);
+				thrust::transform(weightsMatrix.begin(),weightsMatrix.end(),weightsMatrix.begin(),fix_random_numbers());
+				cout << "thisSize: " << thisSize << " nextSize: " << nextSize << " thisSize*nextSize: " << (thisSize*nextSize) << endl;
+			}
+			//cudaFree(&softmaxTemp);
+			//cudaFree(&softmaxOutputs);
 		} else {
-			softmaxTemp=device_vector<double>(batchSize*thisSize);
-			softmaxOutputs=device_vector<double>(batchSize);
+			//softmaxTemp=device_vector<double>(batchSize*thisSize);
+			//softmaxOutputs=device_vector<double>(batchSize);
+			//derivatives=device_vector<double>(batchSize*thisSize,0.0);
+			//derivTemp=device_vector<double>(batchSize*thisSize,0.0);			
 			cudaFree(&derivatives);
 			cudaFree(&derivTemp);
 			cudaFree(&weightsMatrix);
 		}
 		if(type==HIDDEN) {
-			derivatives=device_vector<double>(batchSize*sizeThis,0.0);
-			derivTemp=device_vector<double>(batchSize*sizeThis,0.0);
+			derivatives=device_vector<double>(batchSize*thisSize,0.0);
+			derivTemp=device_vector<double>(batchSize*thisSize,0.0);
 		}
 	}
 
-	void forwardProp(device_vector<double> &toNext, int rows, int cols) {
-		if(type==INPUT) {
+	//void forwardProp(device_vector<double> &toNext, int rows, int cols) {
+		/*if(type==INPUT) {
 			const double alf=1.0, bet=0.0;
 			const double *alpha=&alf, *beta=&bet;
 			//cout << "alpha: " << *alpha << " beta: " << *beta << endl;
@@ -222,14 +237,14 @@ public:
 			//print_matrix(toNext,batchSize,nextSize);
 			//sleep(10);
 			return;
-		}
-		if(type==OUTPUT) {
+		}*/
+		/*if(type==OUTPUT) {
 			thrust::transform(atNeuronInputs.begin(),atNeuronInputs.end(),softmaxTemp.begin(),exp_double());
 			thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(batchSize),softmax_helper(softmaxTemp.data().get(),softmaxOutputs.data().get(),batchSize,thisSize));
 			thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(thisSize*batchSize),softmax_helper2(toNext.data().get(),softmaxTemp.data().get(),softmaxOutputs.data().get(),batchSize,thisSize));
 			return;
-		}
-		const double alf=1.0, bet=0.0;
+		}*/
+		/*const double alf=1.0, bet=0.0;
 		const double *alpha=&alf, *beta=&bet;		
 		//printf("In forward prop before sigmoid atNeuronInputs:\n");
 		//print_matrix(atNeuronInputs,batchSize,thisSize);		
@@ -242,64 +257,65 @@ public:
 		//printf("thisSize: %d\n",thisSize);
 		//sleep(2);
 		thrust::transform(atNeuronOutputs.begin(),atNeuronOutputs.end(),derivTemp.begin(),sigmoid_devrivative_double());
+		//thrust::transform(atNeuronInputs.begin(),atNeuronInputs.end(),derivTemp.begin(),sigmoid_devrivative_double());
 		//cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, thisSize-1, batchSize, alpha, derivTemp.data().get(), batchSize, beta, derivTemp.data().get(), batchSize, derivatives.data().get(), thisSize-1);
 		cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, thisSize, batchSize, alpha, derivTemp.data().get(), batchSize, beta, derivTemp.data().get(), batchSize, derivatives.data().get(), thisSize);
 		cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, batchSize, nextSize, thisSize, alpha, atNeuronOutputs.data().get(), batchSize, weightsMatrix.data().get(), thisSize, beta, toNext.data().get(), batchSize);
-	}
-
+	}*/
+	int type, thisSize, nextSize, batchSize;
 private:
 	cublasHandle_t handle;
-	int type, thisSize, nextSize, batchSize;
 };
 
 class neuralNet {
 public:
-	neuralNet(int _numInputs, int _numOutputs, vector<int> &_hiddenMatrix, int pBatchSize, string _inFile) : 
+	neuralNet(){}
+	neuralNet(string _inFile) : inFile(_inFile) {
+		cublasCreate(&handle);
+		loadState();
+	}
+	neuralNet(int _numInputs, int _numOutputs, vector<int> &_hiddenMatrix, int pBatchSize) : 
 		hiddenMatrix(_hiddenMatrix), RMS(DBL_MAX), minRMS(DBL_MAX), epoch(0), learningRate(0.05), 
-		batchSize(pBatchSize), inFile(_inFile) {
+		batchSize(pBatchSize) {
 
 		cublasCreate(&handle);
-		if(inFile=="") {
-			numInputs=_numInputs;
-			numOutputs=_numOutputs;
-			hiddenMatrix.insert(hiddenMatrix.begin(),numInputs);
-			hiddenMatrix.push_back(numOutputs);
+		numInputs=_numInputs;
+		numOutputs=_numOutputs;
+		hiddenMatrix.insert(hiddenMatrix.begin(),numInputs);
+		hiddenMatrix.push_back(numOutputs);
 
-			NNlayers=vector<NN_layer>(hiddenMatrix.size());
-			layers=hiddenMatrix.size();
-			outputsIndex=layers-1;
-			cout << "Setting up network...\n";
-			cout << "Layers: ";
-			for(auto h:hiddenMatrix) {
-				cout << h << " ";
-			}
-			cout << "Batch size: " << batchSize << endl << endl;
-
-			ULLI maxWeightsMatrix=0;
-			for(int i=0;i<layers;++i) {
-				if(i<outputsIndex) {
-					++hiddenMatrix[i];
-				}
-				if(i) {
-					if(hiddenMatrix[i-1]*hiddenMatrix[i]>maxWeightsMatrix) {
-						maxWeightsMatrix=hiddenMatrix[i-1]*hiddenMatrix[i];
-					}
-				}
-			}
-			weightsTemp=device_vector<double>(maxWeightsMatrix,0.0);
-
-			NNlayers[0]=NN_layer(hiddenMatrix[0],hiddenMatrix[1],batchSize,INPUT,handle);
-			for(int i=1;i<outputsIndex;++i) {
-				NNlayers[i]=NN_layer(hiddenMatrix[i],hiddenMatrix[i+1],batchSize,HIDDEN,handle);
-			}
-			NNlayers[outputsIndex]=NN_layer(hiddenMatrix[outputsIndex],0,batchSize,OUTPUT,handle);
-		} else {
-
+		NNlayers=vector<NN_layer>(hiddenMatrix.size());
+		layers=hiddenMatrix.size();
+		outputsIndex=layers-1;
+		cout << "Setting up network...\n";
+		cout << "Layers: ";
+		for(auto h:hiddenMatrix) {
+			cout << h << " ";
 		}
+		cout << "Batch size: " << batchSize << endl << endl;
+
+		maxWeightsMatrix=0;
+		for(int i=0;i<layers;++i) {
+			if(i<outputsIndex) {
+				++hiddenMatrix[i];
+			}
+			if(i) {
+				if(hiddenMatrix[i-1]*hiddenMatrix[i]>maxWeightsMatrix) {
+					maxWeightsMatrix=hiddenMatrix[i-1]*hiddenMatrix[i];
+				}
+			}
+		}
+		weightsTemp=device_vector<double>(maxWeightsMatrix,0.0);
+
+		NNlayers[0]=NN_layer(hiddenMatrix[0],hiddenMatrix[1],batchSize,INPUT,handle);
+		for(int i=1;i<outputsIndex;++i) {
+			NNlayers[i]=NN_layer(hiddenMatrix[i],hiddenMatrix[i+1],batchSize,HIDDEN,handle);
+		}
+		NNlayers[outputsIndex]=NN_layer(hiddenMatrix[outputsIndex],0,batchSize,OUTPUT,handle);
 	}
 
 	void train_MatMul(vector<vector<float>> &pData, vector<vector<double>> &pLabels, ULLI maxIter, 
-		float RMSwant, vector<UNCHAR> &bLabels, int doDataSetSize, double lRate, string inFile, string outFile) {
+		float RMSwant, vector<UNCHAR> &bLabels, int doDataSetSize, double lRate) {
 
 		if(lRate<0.0) {
 			learningRate=.05;
@@ -327,11 +343,15 @@ public:
 		}
 
 		toDivideRMS=((double)dataSetSize)*(double)numOutputs;
-		device_vector<float> data[dataSetSize];
-		device_vector<double> labels[dataSetSize];
+		device_vector<double> data[dataSetSize/batchSize];
+		device_vector<float> dataTemp[dataSetSize];
+		device_vector<double> dataTransposeTemp((itemSize+1)*batchSize);
+		device_vector<double> labels[dataSetSize/batchSize];
+		device_vector<double> labelsTemp[dataSetSize];
 		device_vector<double> batchLabels(numOutputs*batchSize,0.0);
-		device_vector<double> batchLabelsTemp(numOutputs*batchSize,0.0);
-		device_vector<double> outputsTemp(batchSize*numOutputs,0.0);		
+		device_vector<double> outputsTemp(batchSize*numOutputs,0.0);
+		device_vector<double> softmaxTemp(batchSize*numOutputs);
+		device_vector<double> softmaxOutputs(batchSize);
 
 		float *temp;
 		double *tempd;
@@ -339,48 +359,82 @@ public:
 		ULLI llen=pLabels[0].size();
 		for(int i=0;i<dataSetSize;++i) {
 			temp=&pData[i][0];
-			data[i]=device_vector<float>(temp, temp+len);
+			dataTemp[i]=device_vector<float>(temp, temp+len);
 			tempd=&pLabels[i][0];
-			labels[i]=device_vector<double>(tempd, tempd+llen);
-		}		
+			labelsTemp[i]=device_vector<double>(tempd, tempd+llen);
+		}
+
+		//Creating pre-made batches so I can simply copy them to layer[0]
+		cout << "Making batches...\n";
+		int whichBatch=0;
+		for(int itemNum=0;itemNum<dataSetSize;itemNum+=batchSize) {
+			batchStart=0;
+			batchEnd=0;
+			int biasInputIndex=itemSize;
+			data[whichBatch]=device_vector<double>((itemSize+1)*batchSize);
+			labels[whichBatch]=device_vector<double>(batchSize*numOutputs);
+			for(int b=0;b<batchSize;++b) {
+				thrust::transform(dataTemp[itemNum+b].begin(),dataTemp[itemNum+b].end(),dataTransposeTemp.begin()+batchStart,floatToDoubleFunctor());
+				//thrust::copy(dataTemp[itemNum+b].begin(),dataTemp[itemNum+b].end(),dataTransposeTemp.begin()+batchStart);
+				dataTransposeTemp[biasInputIndex]=1.0;
+				thrust::copy(labelsTemp[itemNum+b].begin(),labelsTemp[itemNum+b].end(),batchLabels.begin()+batchEnd);
+				batchStart+=itemSize+1;
+				batchEnd+=numOutputs;
+				biasInputIndex+=itemSize+1;
+				cudaFree(&dataTemp[itemNum+b]);
+				cudaFree(&labelsTemp[itemNum+b]);
+			}
+			cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, batchSize, numOutputs, alpha, batchLabels.data().get(), numOutputs, beta, batchLabels.data().get(), numOutputs, labels[whichBatch].data().get(), batchSize);
+			cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, batchSize, itemSize+1, alpha, dataTransposeTemp.data().get(), itemSize+1, beta, dataTransposeTemp.data().get(), itemSize+1, data[whichBatch].data().get(), batchSize);
+			++whichBatch;
+		}
 
 		cout << "Starting training...\n";
+		cudaFree(&dataTransposeTemp);
+		cudaFree(&batchLabels);
 
 		thrust::device_vector<double>::iterator iter;
 		int position;
-		int gotRight=0;
+		int gotRight=0, maxGotRight=0;
 		ULLI neededEpochs=0;
-		int biasInputIndex;
-		int tnSize, ttSize;
+		int tnSize, ttSize, sizeOutputs=numOutputs*batchSize;
 
 		//for(int epochNum=0;epochNum<maxEpochs && (RMSwanted<RMS || RMS!=RMS) && gotRight!=dataSetSize;++epochNum) {
 		for(int epochNum=0;epochNum<maxEpochs && gotRight!=dataSetSize;++epochNum) {
 			RMS=0.0;
 			gotRight=0;
+			whichBatch=0;
 			for(int itemNum=0;itemNum<dataSetSize;itemNum+=batchSize) {
 				if(batchSize<11) {
 					printf("Items %d thru %d\r",itemNum,itemNum+batchSize);
 				}
 
-				//Copy data from a batch of the training set into first neuron layer
-				batchStart=0;
-				batchEnd=0;
-				biasInputIndex=itemSize;
-				for(int b=0;b<batchSize;++b) {
-					thrust::transform(data[itemNum+b].begin(),data[itemNum+b].end(),NNlayers[0].atNeuronOutputs.begin()+batchStart,floatToDoubleFunctor());
-					NNlayers[0].atNeuronOutputs[biasInputIndex]=1.0;
-					thrust::copy(labels[itemNum+b].begin(),labels[itemNum+b].end(),batchLabelsTemp.begin()+batchEnd);
-					batchStart+=itemSize+1;
-					batchEnd+=numOutputs;
-					biasInputIndex+=itemSize+1;
-				}
-				cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, batchSize, numOutputs, alpha, batchLabelsTemp.data().get(), numOutputs, beta, batchLabelsTemp.data().get(), numOutputs, batchLabels.data().get(), batchSize);
+				//Don't need to copy from data[] device_vector to neuron vector, simply start the ANN at the data in [whichBatch]
 
 				//forward propagation
-				for(int i=0;i<outputsIndex;++i) {
-					NNlayers[i].forwardProp(NNlayers[i+1].atNeuronInputs,batchSize,hiddenMatrix[i+1]);
+				thisSize=hiddenMatrix[0];
+				nextSize=hiddenMatrix[1];
+				cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, batchSize, nextSize, thisSize, alpha, data[whichBatch].data().get(), batchSize, NNlayers[0].weightsMatrix.data().get(), thisSize, beta, NNlayers[1].atNeuronInputs.data().get(), batchSize);
+				for(int i=1;i<outputsIndex;++i) {
+					thisSize=hiddenMatrix[i];
+					nextSize=hiddenMatrix[i+1];					
+					//NNlayers[i].forwardProp(NNlayers[i+1].atNeuronInputs,batchSize,hiddenMatrix[i+1]);
+					thrust::transform(NNlayers[i].atNeuronInputs.begin(),NNlayers[i].atNeuronInputs.end(),NNlayers[i].atNeuronOutputs.begin(),sigmoid_double());
+					thrust::fill(NNlayers[i].atNeuronOutputs.begin()+(batchSize*(thisSize-1)),NNlayers[i].atNeuronOutputs.end(),1.0);
+					//thrust::transform(NNlayers[i].atNeuronOutputs.begin(),NNlayers[i].atNeuronOutputs.end(),NNlayers[i].derivTemp.begin(),sigmoid_devrivative_double());
+					//thrust::transform(NNlayers[i].atNeuronInputs.begin(),NNlayers[i].atNeuronInputs.end(),NNlayers[i].derivTemp.begin(),sigmoid_devrivative_double());
+					//cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, thisSize, batchSize, alpha, NNlayers[i].derivTemp.data().get(), batchSize, beta, NNlayers[i].derivTemp.data().get(), batchSize, NNlayers[i].derivatives.data().get(), thisSize);
+					cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, batchSize, nextSize, thisSize, alpha, NNlayers[i].atNeuronOutputs.data().get(), batchSize, NNlayers[i].weightsMatrix.data().get(), thisSize, beta, NNlayers[i+1].atNeuronInputs.data().get(), batchSize);
 				}
-				NNlayers[outputsIndex].forwardProp(NNlayers[outputsIndex].atNeuronOutputs,batchSize,numOutputs);
+				//NNlayers[outputsIndex].forwardProp(NNlayers[outputsIndex].atNeuronOutputs,batchSize,numOutputs);
+				//thrust::transform(NNlayers[outputsIndex].atNeuronInputs.begin(),NNlayers[outputsIndex].atNeuronInputs.end(),NNlayers[outputsIndex].atNeuronOutputs.begin(),sigmoid_double());
+				//thrust::transform(NNlayers[outputsIndex].atNeuronOutputs.begin(),NNlayers[outputsIndex].atNeuronOutputs.end(),NNlayers[outputsIndex].derivTemp.begin(),sigmoid_devrivative_double());
+				//thrust::transform(NNlayers[outputsIndex].atNeuronInputs.begin(),NNlayers[outputsIndex].atNeuronInputs.end(),NNlayers[outputsIndex].derivTemp.begin(),sigmoid_devrivative_double());
+				//cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, numOutputs, batchSize, alpha, NNlayers[outputsIndex].derivTemp.data().get(), batchSize, beta, NNlayers[outputsIndex].derivTemp.data().get(), batchSize, NNlayers[outputsIndex].derivatives.data().get(), numOutputs);
+
+				thrust::transform(NNlayers[outputsIndex].atNeuronInputs.begin(),NNlayers[outputsIndex].atNeuronInputs.end(),softmaxTemp.begin(),exp_double());
+				thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(batchSize),softmax_helper(softmaxTemp.data().get(),softmaxOutputs.data().get(),batchSize,numOutputs));
+				thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(sizeOutputs),softmax_helper2(NNlayers[outputsIndex].atNeuronOutputs.data().get(),softmaxTemp.data().get(),softmaxOutputs.data().get(),batchSize,numOutputs));
 
 				//first check how many we got right
 				batchStart=0;
@@ -420,25 +474,35 @@ public:
 				}
 
 				//Backward propagation
-				thrust::transform(NNlayers[outputsIndex].atNeuronOutputs.begin(),NNlayers[outputsIndex].atNeuronOutputs.end(),batchLabels.begin(),outputsTemp.begin(),thrust::minus<double>());
+				thrust::transform(NNlayers[outputsIndex].atNeuronOutputs.begin(),NNlayers[outputsIndex].atNeuronOutputs.end(),labels[whichBatch].begin(),outputsTemp.begin(),thrust::minus<double>());
 				cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, numOutputs, batchSize, alpha, outputsTemp.data().get(), batchSize, beta, outputsTemp.data().get(), batchSize, NNlayers[outputsIndex].deltas.data().get(), numOutputs);
+				//thrust::transform(NNlayers[outputsIndex].derivatives.begin(),NNlayers[outputsIndex].derivatives.end(),NNlayers[outputsIndex].deltas.begin(),NNlayers[outputsIndex].deltas.begin(),thrust::multiplies<double>());
 
 				int i=outputsIndex-1;
 				thisSize=hiddenMatrix[i];
-				nextSize=hiddenMatrix[i+1]+1;				
+				nextSize=hiddenMatrix[i+1];
+				ttSize=thisSize-1;
+				tnSize=nextSize-1;
 				cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, nextSize, thisSize, alpha, NNlayers[i].weightsMatrix.data().get(), thisSize, beta, NNlayers[i].weightsMatrix.data().get(), thisSize, weightsTemp.data().get(), nextSize);
-				for(;i>0;--i) {
+				cublasDgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, ttSize, batchSize, nextSize, alpha, weightsTemp.data().get(), nextSize, NNlayers[i+1].deltas.data().get(), nextSize, beta, NNlayers[i].deltas.data().get(), ttSize);
+				//thrust::transform(NNlayers[i].derivatives.begin(),NNlayers[i].derivatives.end(),NNlayers[i].deltas.begin(),NNlayers[i].deltas.begin(),thrust::multiplies<double>());				
+				--i;
+				for(;i;--i) {
 					thisSize=hiddenMatrix[i];
 					nextSize=hiddenMatrix[i+1];
 					tnSize=nextSize-1;
 					ttSize=thisSize-1;
 					cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, nextSize, thisSize, alpha, NNlayers[i].weightsMatrix.data().get(), thisSize, beta, NNlayers[i].weightsMatrix.data().get(), thisSize, weightsTemp.data().get(), nextSize);
 					cublasDgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, ttSize, batchSize, tnSize, alpha, weightsTemp.data().get(), nextSize, NNlayers[i+1].deltas.data().get(), tnSize, beta, NNlayers[i].deltas.data().get(), ttSize);
-					thrust::transform(NNlayers[i].derivatives.begin(),NNlayers[i].derivatives.end(),NNlayers[i].deltas.begin(),NNlayers[i].deltas.begin(),thrust::multiplies<double>());
+					//thrust::transform(NNlayers[i].derivatives.begin(),NNlayers[i].derivatives.end(),NNlayers[i].deltas.begin(),NNlayers[i].deltas.begin(),thrust::multiplies<double>());
 				}
 
 				int j=outputsIndex-1;
-				for(int i=0;i<j;++i) {
+				thisSize=hiddenMatrix[0];
+				nextSize=hiddenMatrix[1]-1;				
+				cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, nextSize, thisSize, batchSize, alpha, NNlayers[1].deltas.data().get(), nextSize, data[whichBatch].data().get(), batchSize, beta, weightsTemp.data().get(), nextSize);
+				cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, thisSize, nextSize, alphaLearn, weightsTemp.data().get(), nextSize, betaAdd, NNlayers[0].weightsMatrix.data().get(), thisSize, NNlayers[0].weightsMatrix.data().get(), thisSize);				
+				for(int i=1;i<j;++i) {
 					thisSize=hiddenMatrix[i];
 					nextSize=hiddenMatrix[i+1]-1;
 					cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, nextSize, thisSize, batchSize, alpha, NNlayers[i+1].deltas.data().get(), nextSize, NNlayers[i].atNeuronOutputs.data().get(), batchSize, beta, weightsTemp.data().get(), nextSize);
@@ -448,14 +512,17 @@ public:
 				nextSize=hiddenMatrix[j+1];
 				cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, nextSize, thisSize, batchSize, alpha, NNlayers[j+1].deltas.data().get(), nextSize, NNlayers[j].atNeuronOutputs.data().get(), batchSize, beta, weightsTemp.data().get(), nextSize);
 				cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, thisSize, nextSize, alphaLearn, weightsTemp.data().get(), nextSize, betaAdd, NNlayers[j].weightsMatrix.data().get(), thisSize, NNlayers[j].weightsMatrix.data().get(), thisSize);				
+				++whichBatch;
 			}
 			if(batchSize<11) {printf("\n");}
-			printf("Iteration: %d of %llu -- Got %d of %d correct -- learningRate: %.15f\n",epochNum,maxEpochs,gotRight,dataSetSize,*alphaLearn);
-			if(false) {
+			//printf("Iteration: %d of %llu -- Got %d of %d correct -- learningRate: %.15f\n",epochNum,maxEpochs,gotRight,dataSetSize,*alphaLearn);
+			if(gotRight>maxGotRight){maxGotRight=gotRight;}
+			printf("Iteration: %d -- Got %d of %d -- max right: %d -- lRate: %.10f\n",epochNum,gotRight,dataSetSize,maxGotRight,*alphaLearn);
+			if(vlRate) {
 				//if(epochNum>1) {
 					double percLearned=(double)gotRight/(double)dataSetSize;
-					if(percLearned<0.99 && percLearned>0.5) {
-						percLearned=(1.0-percLearned);
+					if(percLearned<0.99 && percLearned>0.9) {
+						percLearned=(1.0-percLearned)*9.5;
 						//percLearned=(1.0-percLearned)*2.0;
 						//percLearned=(1.0-percLearned)/2.0;
 						//percLearned=pow(1.0-percLearned,(double)layers);
@@ -463,18 +530,88 @@ public:
 						//alfLearn=-(percLearned*(learningRate/2.0)+(learningRate/2.0));
 						alfLearn=-(percLearned*learningRate);
 					} else {
-						alfLearn=-learningRate;
+						if(percLearned<0.9) {
+							alfLearn=-learningRate;
+						}
 					}
 				//}
 			}
 			neededEpochs=epochNum;
 		}
 		cout << "Epochs needed: " << neededEpochs << endl;
+		saveState("weights");
 		cublasDestroy(handle);
 	}
 
+	void saveState(string outFile) {
+		outFile+="-"+to_string(dataSetSize);
+		cout << "Writing weights to file: " << outFile << endl;
+		ofstream oFile(outFile, ios::binary|ios::out);
+		if(oFile.is_open()) {
+			oFile.write((char*)&epoch,sizeof(ULLI));
+			oFile.write((char*)&layers,sizeof(ULLI));
+			oFile.write((char*)&maxWeightsMatrix,sizeof(ULLI));
+			for(int i=0;i<hiddenMatrix.size();++i) {
+				oFile.write((char*)&hiddenMatrix[i],sizeof(int));
+			}
+			oFile.write((char*)&batchSize,sizeof(int));
+			oFile.write((char*)&learningRate,sizeof(double));
+			for(int i=0;i<outputsIndex;++i) {
+				int end=NNlayers[i].thisSize*NNlayers[i].nextSize;
+				for(int j=0;j<end;++j) {
+					double o=NNlayers[i].weightsMatrix[j];
+					oFile.write((char*)&o,sizeof(double));
+				}		
+			}
+			oFile.close();
+		}
+		cout << "Done\n";
+	}
+
+	void loadState() {
+		cout << "Reading weights from file: " << inFile << endl;
+		ifstream oFile(inFile, ios::binary|ios::in);
+		if(oFile.is_open()) {
+			oFile.read((char*)&epoch,sizeof(ULLI));
+			oFile.read((char*)&layers,sizeof(ULLI));
+			oFile.read((char*)&maxWeightsMatrix,sizeof(ULLI));
+			hiddenMatrix.clear();
+			for(int i=0;i<layers;++i) {
+				int l=0;
+				oFile.read((char*)&l,sizeof(int));
+				hiddenMatrix.push_back(l);
+			}
+			oFile.read((char*)&batchSize,sizeof(int));
+			oFile.read((char*)&learningRate,sizeof(double));
+
+			outputsIndex=layers-1;
+			numInputs=hiddenMatrix[0]-1;
+			numOutputs=hiddenMatrix[outputsIndex];
+			weightsTemp=device_vector<double>(maxWeightsMatrix,0.0);
+
+			NNlayers.clear();
+			int type=INPUT;
+			for(int i=0;i<outputsIndex;++i) {
+				if(i){type=HIDDEN;}
+				NNlayers.push_back(NN_layer(hiddenMatrix[i],hiddenMatrix[i+1],batchSize,type));
+				int end=NNlayers[i].thisSize*NNlayers[i].nextSize;
+				for(int j=0;j<end;++j) {
+					double o=0.0;
+					oFile.read((char*)&o,sizeof(double));
+					NNlayers[i].weightsMatrix.push_back(o);
+				}
+				NNlayers[i].setupLayer(false, handle);
+			}
+			NNlayers.push_back(NN_layer(hiddenMatrix[outputsIndex],0,batchSize,OUTPUT));
+			NNlayers.back().setupLayer(false, handle);
+			oFile.close();
+		}
+		cout << "Done\n";
+	}
+	vector<NN_layer> NNlayers;
+
 private:
-	ULLI epoch, maxElement, layers, maxEpochs;
+	ULLI epoch, maxElement, layers, maxEpochs, maxWeightsMatrix;
 	int outputsIndex, dataSetSize, numInputs, numOutputs, batchSize;
 	double RMS, minRMS, toDivideRMS, RMSwanted, learningRate;
 	vector<int> hiddenMatrix;
@@ -483,7 +620,6 @@ private:
 	string inFile;
 
 	vector<vector<double>> neuralNet_weights_host;
-	vector<NN_layer> NNlayers;
 	device_vector<double> weightsTemp;
 };
 
@@ -573,12 +709,16 @@ void doMain(int my_rank, string hostname, int num_nodes, vector<int> &inputHidde
 		//}
 		//UNCHAR* t=&temp[0];
 		//intarray2bmp::intarray2bmp("outputtest.bmp",t,(UNCHAR)28,(UNCHAR)28,(UNCHAR)0,(UNCHAR)255);
-
-		neuralNet go(784,10,hiddenMatrix,batchSize,inFile);
+		neuralNet go;
+		if(inFile=="") {
+			go=neuralNet(784,10,hiddenMatrix,batchSize);
+		} else {
+			go=neuralNet(inFile);
+		}
 		auto start = high_resolution_clock::now();
 		//go.train_floats(trainData,trainLabels,1000000,0.0001,trainLabels2);
 		//go.train(trainData,trainLabels,1000000,0.0001,trainLabels2, doDataSetSize);//*/
-		go.train_MatMul(trainData,trainLabels,1000000,0.0001,trainLabels2, doDataSetSize, lRate, inFile, outFile);//*/
+		go.train_MatMul(trainData,trainLabels,1000000,0.0001,trainLabels2, doDataSetSize, lRate);//*/
 		auto endTime = high_resolution_clock::now();
 		printTime(start,endTime);
 	}
@@ -593,7 +733,7 @@ void doMain(int my_rank, string hostname, int num_nodes, vector<int> &inputHidde
 		//vector<vector<neuron_t>> countingTest;
 		//vector<vector<double>> countingLabels;
 		int size=pow(2,BITS);
-		neuralNet test(BITS,BITS,hiddenMatrix,batchSize,inFile);
+		neuralNet test(BITS,BITS,hiddenMatrix,batchSize);
 		vector<vector<float>> countingTest;
 		vector<vector<double>> countingLabels;
 		for(int i=0;i<size;++i) {
@@ -608,17 +748,42 @@ void doMain(int my_rank, string hostname, int num_nodes, vector<int> &inputHidde
 				countingLabels[i][j]=(double)bitset<BITS>((i+1)%size)[(BITS-1)-j];
 			}
 		}
-		vector<UNCHAR> fuckoff;
-		test.train_MatMul(countingTest,countingLabels,1000000,0.00001,fuckoff,size,lRate,inFile,outFile);
+		vector<UNCHAR> placeHolder;
+		test.train_MatMul(countingTest,countingLabels,1000000,0.00001,placeHolder,size,lRate);
 	}
 }
 
 int main(int argc, char *argv[]) {
 
-	//vector<int> hMatrix;
-	//hMatrix.push_back(131);
-	//hMatrix.push_back(137);
-	//neuralNet test(341,10,hMatrix,10);
+
+	///////  Save and load weights test code
+	/*vector<int> hMatrix;
+	hMatrix.push_back(131);
+	hMatrix.push_back(137);
+	neuralNet test(341,10,hMatrix,10);
+	hMatrix.insert(hMatrix.begin(),341);
+	hMatrix.push_back(10);
+	for(int i=0;i<3;++i){++hMatrix[i];}
+	for(int i=0;i<3;++i) {
+		for(int j=0;j<(hMatrix[i]*hMatrix[i+1]);++j) {
+			test.NNlayers[i].weightsMatrix[j]=(double)j;
+		}
+	}
+	cout << "from original\n";
+	for(int i=0;i<20;++i) {
+		cout << test.NNlayers[1].weightsMatrix[i] << " ";
+	}
+	cout << endl;
+	cout << "from file\n";
+	test.saveState("weights");
+	neuralNet test2("weights");
+	for(int i=0;i<test2.NNlayers.size();++i) {
+		cout << test2.NNlayers[i].thisSize << endl;
+	}
+	for(int i=0;i<20;++i) {
+		cout << test.NNlayers[1].weightsMatrix[i] << endl;
+	}	
+	return 0;//*/
 
 	///		softmax tester code ----- 
 	/*int rows=4,cols=5,rc=rows*cols;
@@ -674,6 +839,9 @@ int main(int argc, char *argv[]) {
 	vector<int> inputHiddenLayers;
     for(int i=1;i<argc;++i) {
         string temp=string(argv[i]);
+        if(temp.find("vlRate")!=string::npos) {
+        	vlRate=true;
+        }
         if(temp.find("outWeights=")!=string::npos) {
         	outFile=temp.substr(11,temp.size());
         	continue;
