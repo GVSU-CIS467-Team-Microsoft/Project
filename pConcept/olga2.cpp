@@ -25,6 +25,8 @@
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/extrema.h>
+#include <thrust/iterator/zip_iterator.h>
+#include <thrust/tuple.h>
 #include <mpi.h>
 #include "helper_cuda.h"
 #include "helper_string.h"
@@ -64,6 +66,18 @@ void print_matrix(device_vector<double> &A, int nr_rows_A, int nr_cols_A);
 typedef thrust::tuple<ULLI, ULLI> uTuple;
 typedef thrust::tuple<double, double> dTuple;
 typedef thrust::tuple<ULLI, double, double> tTuple;
+typedef thrust::device_vector<double>::iterator doubleIterator;
+typedef thrust::tuple<doubleIterator, doubleIterator> iterTuple;
+typedef thrust::zip_iterator<iterTuple> zipIterator;
+
+void memTracker(int in, bool printIt) {
+	memoryTracker+=in;
+	if(printIt) {
+		cout << "Cuda memory tracker: Using(bytes): " << memoryTracker << " ";
+		cout << "(Kb): " << (memoryTracker/1024) << " ";
+		cout << "(Mb): " << ((memoryTracker/1024)/1024) << endl;
+	}
+}
 
 struct floatToDoubleFunctor : public thrust::unary_function<float,double> {
 	__device__ double operator()(float t) {
@@ -96,7 +110,12 @@ struct update_w : public thrust::unary_function<int, void> {
 	double lRate;
 	update_w(double *w, double *_newW, double lr) : weights(w), newW(_newW), lRate(lr){}
 	__device__ void operator()(int t) {
-		weights[t]=weights[t]-lRate*newW[t];
+		double local=weights[t];
+		double local2=lRate;
+		double local3=newW[t];
+		double local4=local-local2*local3;
+		weights[t]=local4;
+		//weights[t]=weights[t]-lRate*newW[t];
 	}
 };
 struct update_b : public thrust::unary_function<int, void> {
@@ -105,7 +124,12 @@ struct update_b : public thrust::unary_function<int, void> {
 	double lRate;
 	update_b(double *b, double *_newB, double lr) : biases(b), newB(_newB), lRate(lr){}
 	__device__ void operator()(int t) {
-		biases[t]=biases[t]-lRate*newB[t];
+		double local=biases[t];
+		double local2=lRate;
+		double local3=newB[t];
+		double local4=local-local2*local3;
+		biases[t]=local4;
+		//biases[t]=biases[t]-lRate*newB[t];
 	}
 };
 
@@ -133,6 +157,65 @@ struct exp_double : public thrust::unary_function<double, double> {
 	}
 };
 
+struct forwardFeed_helper : public thrust::unary_function<int, double> {
+	double *inputs;
+	double *biases;
+	forwardFeed_helper(){}
+	forwardFeed_helper(double *_inputs, double* _biases) : inputs(_inputs), biases(_biases){}
+	__device__ double operator()(int t) {
+	//__device__ double operator()(thrust::tuple<double, double> t) {
+		double local=inputs[t];
+		local+=biases[t];
+		inputs[t]=local;
+		return 1.0/(1.0+exp(-local));
+	}
+};
+struct backProp_helper : public thrust::unary_function<int, double> {
+	double *innerDelta;
+	double *inputs;
+	backProp_helper(){}
+	backProp_helper(double* _innerDelta, double *_inputs) : innerDelta(_innerDelta), inputs(_inputs){}
+	__device__ double operator()(int t) {
+		double local=1.0/(1.0+exp(-inputs[t]));
+		local=local*(1.0-local);
+		return innerDelta[t]*local;
+	}
+	/*__device__ double operator()(thrust::tuple<double, double> t) {
+		double local=1.0/(1.0+exp(-thrust::get<0>(t)));
+		local=local*(1.0-local);
+		return thrust::get<1>(t)*local;
+	}*/
+};
+struct backProp_helper2 : public thrust::unary_function<thrust::tuple<double, double>, double> {
+	double *outputs;
+	double *innerDelta;
+	backProp_helper2(){}
+	backProp_helper2(double *_outputs, double* _innerDelta) : innerDelta(_innerDelta), outputs(_outputs){}
+	__device__ double operator()(int t) {
+		double local=outputs[t];
+		local=local*(1.0-local);
+		return innerDelta[t]*local;
+	}
+	/*__device__ double operator()(thrust::tuple<double, double> t) {
+		double local=thrust::get<0>(t);
+		local=local*(1.0-local);
+		return thrust::get<1>(t)*local;
+	}*/
+};
+struct output_helper : public thrust::unary_function<int, double> {
+	double *inputs;
+	double *outputs;
+	double *labels;
+	double *innerDelta;
+	output_helper(double *_outputs, double *_inputs, double* _innerDelta, double* _labels) : outputs(_outputs), inputs(_inputs), innerDelta(_innerDelta), labels(_labels){}
+	__device__ double operator()(int t) {
+		double local=outputs[t]-labels[t];
+		double local2=1.0/(1.0+exp(-inputs[t]));
+		local2=local2*(1.0-local2);
+		return local2*local;
+	}
+};
+
 class NN_layer {
 public:
 
@@ -145,12 +228,14 @@ public:
 	NN_layer(int sizeThis, int sizeNext, int pType) : 
 			type(pType), thisSize(sizeThis), nextSize(sizeNext) {
 
-		if(type!=OUTPUT) {
-			weightsMatrix=device_vector<double>(thisSize*nextSize);
+		allW=thisSize*nextSize;
+		allN=thisSize*batchSize;
+		/*if(type!=OUTPUT) {
+			weightsMatrix=device_vector<double>(allW);
 		}
 		if(type!=INPUT) {
-			biases=device_vector<double>(thisSize*batchSize);
-		}
+			biases=device_vector<double>(allN);
+		}*/
 	}
 	NN_layer(int sizeThis, int sizeNext, int pBatchSize, int pType) : 
 			type(pType), thisSize(sizeThis), nextSize(sizeNext), batchSize(pBatchSize) {
@@ -162,19 +247,20 @@ public:
 		atNeuronOutputs=device_vector<double>(batchSize*thisSize,0.0);
 		allW=thisSize*nextSize;
 		allN=thisSize*batchSize;
+		memTracker(allN*8,false);
 		if(newLayer) {
 			if(type!=INPUT) {
 				atNeuronInputs=device_vector<double>(batchSize*thisSize,0.0);
-				memoryTracker+=allN*8;
+				memTracker(allN*8,false);
 				biases=device_vector<double>(thisSize*batchSize,0.0);
-				memoryTracker+=allN*8;
+				memTracker(allN*8,false);
 			} else {
 				cudaFree(&atNeuronInputs);
 				cudaFree(&biases);
 			}
 			if(type!=OUTPUT) {
 				weightsMatrix=device_vector<double>(thisSize*nextSize);
-				memoryTracker+=allW*8;
+				memTracker(allW*8,false);
 				random_doubles(thrust::raw_pointer_cast(&weightsMatrix[0]),thisSize,nextSize);
 				thrust::transform(weightsMatrix.begin(),weightsMatrix.end(),weightsMatrix.begin(),fix_random_numbers());
 				cout << "thisSize: " << thisSize << " nextSize: " << nextSize << " thisSize*nextSize: " << (thisSize*nextSize) << endl;
@@ -209,20 +295,6 @@ public:
 			cout << h << " ";
 		}
 		cout << "Batch size: " << batchSize << endl << endl;
-		maxWeightsMatrix=0;
-		maxDeltaMatrix=0;
-		for(int i=0;i<layers;++i) {
-			if(maxWeightsMatrix<hiddenMatrix[i]*batchSize) {
-				maxWeightsMatrix=hiddenMatrix[i]*batchSize;
-			}
-			if(i) {
-				if(hiddenMatrix[i-1]*hiddenMatrix[i]>maxWeightsMatrix) {
-					maxWeightsMatrix=hiddenMatrix[i-1]*hiddenMatrix[i];
-				}
-			}
-		}
-		//weightsTemp=device_vector<double>(maxWeightsMatrix,0.0);
-		deltaTemp=device_vector<double>(maxDeltaMatrix);
 	}
 	neuralNet(int _numInputs, int _numOutputs, vector<int> &_hiddenMatrix, int pBatchSize) : 
 		hiddenMatrix(_hiddenMatrix), RMS(DBL_MAX), minRMS(DBL_MAX), batchSize(pBatchSize) {
@@ -243,7 +315,7 @@ public:
 		}
 		cout << "Batch size: " << batchSize << endl << endl;
 
-		maxWeightsMatrix=0;
+		/*maxWeightsMatrix=0;
 		maxDeltaMatrix=0;
 		for(int i=0;i<layers;++i) {
 			if(maxWeightsMatrix<hiddenMatrix[i]*batchSize) {
@@ -254,10 +326,10 @@ public:
 					maxWeightsMatrix=hiddenMatrix[i-1]*hiddenMatrix[i];
 				}
 			}
-		}
+		}*/
 		//weightsTemp=device_vector<double>(maxWeightsMatrix,0.0);
-		deltaTemp=device_vector<double>(maxWeightsMatrix);
-		memoryTracker+=maxWeightsMatrix*8;
+		//deltaTemp=device_vector<double>(maxWeightsMatrix);
+		//memoryTracker+=maxWeightsMatrix*8;
 
 		NNlayers[0]=NN_layer(hiddenMatrix[0],hiddenMatrix[1],batchSize,INPUT);
 		for(int i=1;i<outputsIndex;++i) {
@@ -267,7 +339,7 @@ public:
 	}
 
 	void train_MatMul(vector<vector<float>> &pData, vector<vector<double>> &pLabels, ULLI maxIter, 
-		float RMSwant, int doDataSetSize, double lRate, vector<vector<float>> &pTestData, vector<vector<double>> &pTestLabels) {
+		float RMSwant, int doDataSetSize, double lRate, vector<vector<float>> &pTestData, vector<vector<double>> &pTestLabels, bool vlRate) {
 
 		vector<UNCHAR> bLabels;
 		for(auto p:pLabels) {
@@ -283,9 +355,9 @@ public:
 			doDataSetSize=1000;
 		}
 		dataSetSize=doDataSetSize;
-		double alfLearn = -learningRate;
+		//double alfLearn = -learningRate;
 		//const double betAdd = 1;
-		const double *alphaLearn = &alfLearn;
+		//const double *alphaLearn = &alfLearn;
 		//const double *betaAdd = &betAdd;
 		const double alf = 1;
 		const double bet = 0;
@@ -313,10 +385,10 @@ public:
 
 		//toDivideRMS=((double)dataSetSize)*(double)numOutputs;
 		device_vector<double> data[dataSetSize/batchSize];
-		device_vector<float> dataTemp;//[dataSetSize];
+		//device_vector<float> dataTemp;//[dataSetSize];
 		//device_vector<double> dataTransposeTemp(itemSize*batchSize);
 		device_vector<double> labels[dataSetSize/batchSize];
-		device_vector<double> labelsTemp;//[dataSetSize];
+		//device_vector<double> labelsTemp;//[dataSetSize];
 		//device_vector<double> batchLabels(numOutputs*batchSize,0.0);
 		//device_vector<double> outputsTemp(batchSize*numOutputs,0.0);
 		//device_vector<double> outerDeltaB[layers-1];
@@ -327,16 +399,16 @@ public:
 		for(int i=0;i<outputsIndex;++i){
 			//outerDeltaW[i]=device_vector<double>(NNlayers[i].allW);
 			innerDeltaW[i]=device_vector<double>(NNlayers[i].allW,0.0);
-			memoryTracker+=NNlayers[i].allW*8;
+			memTracker(NNlayers[i].allW*8,false);
 			//outerDeltaB[i]=device_vector<double>(NNlayers[i+1].allN);
 			innerDeltaB[i]=device_vector<double>(NNlayers[i+1].allN,0.0);
-			memoryTracker+=NNlayers[i+1].allN*8;
+			memTracker(NNlayers[i+1].allN*8,false);
 		}
 
-		float *temp;
-		double *tempd;
-		ULLI len=pData[0].size();
-		ULLI llen=pLabels[0].size();
+		//float *temp;
+		//double *tempd;
+		//ULLI len=pData[0].size();
+		//ULLI llen=pLabels[0].size();
 		/*for(int i=0;i<dataSetSize;++i) {
 			temp=&pData[i][0];
 			dataTemp[i]=device_vector<float>(temp, temp+len);
@@ -351,21 +423,22 @@ public:
 			batchStart=0;
 			batchEnd=0;
 			data[whichBatch]=device_vector<double>(itemSize*batchSize);
-			memoryTracker+=itemSize*batchSize*8;
+			memTracker(itemSize*batchSize*8,false);
 			labels[whichBatch]=device_vector<double>(batchSize*numOutputs);
-			memoryTracker+=batchSize*numOutputs;
+			memTracker(numOutputs*batchSize*8,false);
 			for(int b=0;b<batchSize;++b) {
-				temp=&pData[itemNum+b][0];
-				dataTemp=device_vector<float>(temp, temp+len);
-				tempd=&pLabels[itemNum+b][0];
-				labelsTemp=device_vector<double>(tempd, tempd+llen);
+				//temp=&pData[itemNum+b][0];
+				//dataTemp=device_vector<float>(temp, temp+len);
+				//tempd=&pLabels[itemNum+b][0];
+				//labelsTemp=device_vector<double>(tempd, tempd+llen);
 				//thrust::transform(dataTemp[itemNum+b].begin(),dataTemp[itemNum+b].end(),dataTransposeTemp.begin()+batchStart,floatToDoubleFunctor());
-				thrust::transform(dataTemp.begin(),dataTemp.end(),data[whichBatch].begin()+batchStart,floatToDoubleFunctor());
+				//thrust::transform(dataTemp.begin(),dataTemp.end(),data[whichBatch].begin()+batchStart,floatToDoubleFunctor());
 				//thrust::transform((device_vector<float>(temp, temp+len)).begin(),(device_vector<float>(temp, temp+len)).end(),data[whichBatch].begin()+batchStart,floatToDoubleFunctor());
+				thrust::copy(pData[itemNum+b].begin(),pData[itemNum+b].end(),data[whichBatch].begin()+batchStart);//,floatToDoubleFunctor());
 				//thrust::copy(dataTemp[itemNum+b].begin(),dataTemp[itemNum+b].end(),dataTransposeTemp.begin()+batchStart);
 				//thrust::copy(labelsTemp[itemNum+b].begin(),labelsTemp[itemNum+b].end(),batchLabels.begin()+batchEnd);
-				thrust::copy(labelsTemp.begin(),labelsTemp.end(),labels[whichBatch].begin()+batchEnd);
-				//thrust::copy((device_vector<double>(tempd, tempd+llen)).begin(),(device_vector<double>(tempd, tempd+llen)).end(),labels[whichBatch].begin()+batchEnd);
+				//thrust::copy(labelsTemp.begin(),labelsTemp.end(),labels[whichBatch].begin()+batchEnd);
+				thrust::copy(pLabels[itemNum+b].begin(),pLabels[itemNum+b].end(),labels[whichBatch].begin()+batchEnd);
 				batchStart+=itemSize;
 				batchEnd+=numOutputs;
 			}
@@ -376,74 +449,99 @@ public:
 		whichBatch=0;
 		for(int i=0;i<testSetSize;i+=batchSize) {
 			testData[whichBatch]=device_vector<double>(itemSize*batchSize);
-			memoryTracker+=itemSize*8*batchSize;
+			memTracker(itemSize*batchSize*8,false);
 			batchStart=0;
 			for(int j=0;j<batchSize;++j) {
-				temp=&pTestData[i+j][0];
-				dataTemp=device_vector<float>(temp, temp+len);
+				//temp=&pTestData[i+j][0];
+				//dataTemp=device_vector<float>(temp, temp+len);
 				//tempd=&pTestLabels[i][0];
 				//labelsTemp=device_vector<double>(tempd, tempd+llen);
-				thrust::transform(dataTemp.begin(),dataTemp.end(),testData[whichBatch].begin()+batchStart,floatToDoubleFunctor());
+				//thrust::transform(dataTemp.begin(),dataTemp.end(),testData[whichBatch].begin()+batchStart,floatToDoubleFunctor());
 				//thrust::transform((device_vector<float>(temp, temp+len)).begin(),(device_vector<float>(temp, temp+len)).end(),testData[i].begin(),floatToDoubleFunctor());
+				thrust::copy(pTestData[i+j].begin(),pTestData[i+j].end(),testData[whichBatch].begin()+batchStart);
 				//thrust::copy(labelsTemp.begin(),labelsTemp.end(),testLabels[i].begin());
 				batchStart+=itemSize;
 			}
 			++whichBatch;
 		}
-		cout << "cuda memory tracker: Using(bytes): " << memoryTracker << " ";
-		cout << "div1024(Kb): " << (memoryTracker/1024) << " ";
-		cout << "div1024(Mb): " << ((memoryTracker/1024)/1024) << endl << endl;
+
+		int mOut=outputsIndex-2;
+		/*zipIterator begin2[outputsIndex];
+		zipIterator end2[outputsIndex];
+		zipIterator begin1[outputsIndex];
+		zipIterator end1[outputsIndex];
+		for(int i=outputsIndex-1;i;--i) {
+			begin2[i]=zipIterator(thrust::make_tuple(NNlayers[i].atNeuronOutputs.begin(), innerDeltaB[mOut].begin()));
+			end2[i]=zipIterator(thrust::make_tuple(NNlayers[i].atNeuronOutputs.end(), innerDeltaB[mOut].end()));
+			begin1[i]=zipIterator(thrust::make_tuple(NNlayers[i].atNeuronInputs.begin(), innerDeltaB[mOut].begin()));
+			end1[i]=zipIterator(thrust::make_tuple(NNlayers[i].atNeuronInputs.end(), innerDeltaB[mOut--].end()));
+		}
+		backProp_helper2 backProp2;
+		backProp_helper backProp;
+
+		//zipIterator fBegin[layers];
+		//zipIterator fEnd[layers];
+		forwardFeed_helper forwardFeed[layers];
+		for(int i=1;i<layers;++i) {
+			forwardFeed[i]=forwardFeed_helper(NNlayers[i].atNeuronInputs.data().get(),NNlayers[i].biases.data().get());
+			//fBegin[i]=zipIterator(thrust::make_tuple(NNlayers[i].atNeuronInputs.begin(),NNlayers[i].biases.begin()));
+			//fEnd[i]=zipIterator(thrust::make_tuple(NNlayers[i].atNeuronInputs.end(),NNlayers[i].biases.end()));
+		}*/
+		//forwardFeed_helper forwardFeed;
 
 		cout << "Starting training...\n";
-		cudaFree(&dataTemp);
-		cudaFree(&labelsTemp);
+		memTracker(0,true);
+		//cudaFree(&dataTemp);
+		//cudaFree(&labelsTemp);
 		//cudaFree(&dataTransposeTemp);
 		//cudaFree(&batchLabels);
 
 		thrust::device_vector<double>::iterator iter;
 		int position;
 		int gotRight=0, prevSize;
-		//int sizeOutputs=numOutputs*batchSize;
-		int mOut=outputsIndex-1;
+		//int numBatches=dataSetSize/batchSize;
 		toDivideRMS=learningRate/(double)batchSize;
-		int maxGotRight=0, maxTestRight=0, ii;
+		//toDivideRMS=learningRate/(double)numBatches;
+		//cout << "toDivideRMS: " << toDivideRMS << endl;
+		int maxGotRight=0, maxTestRight=-1, ii;
+		device_vector<double> which;
+		double origLearningRate=learningRate, seconds, totalTime=0.0;
+		high_resolution_clock::time_point startTime, endTime;
+		//int prevMax=0;
 
-		for(int epochNum=0;epochNum<maxEpochs && gotRight!=dataSetSize;++epochNum) {
+		for(int epochNum=0;epochNum<maxEpochs && maxGotRight!=dataSetSize && maxTestRight!=testSetSize;++epochNum) {
 			RMS=0.0;
 			gotRight=0;
 			whichBatch=0;
 			/*for(int i=0;i<outputsIndex;++i) {
 				thrust::fill(outerDeltaB[i].begin(),outerDeltaB[i].end(),0.0);
 				thrust::fill(outerDeltaW[i].begin(),outerDeltaW[i].end(),0.0);
-			}*/
+			}//*/
+			startTime=high_resolution_clock::now();
 			for(int itemNum=0;itemNum<dataSetSize;itemNum+=batchSize) {
-				//cout << "here2\n";
 				if(batchSize<11) {
 					printf("Items %d thru %d\r",itemNum,itemNum+batchSize);
 				}
 
 				//forward propagation
-				thisSize=hiddenMatrix[0];
-				nextSize=hiddenMatrix[1];
-				cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, nextSize, batchSize, thisSize, alpha, NNlayers[0].weightsMatrix.data().get(), nextSize, data[whichBatch].data().get(), thisSize, beta, NNlayers[1].atNeuronInputs.data().get(), nextSize);
-				thrust::transform(NNlayers[1].atNeuronInputs.begin(),NNlayers[1].atNeuronInputs.end(),NNlayers[1].biases.begin(),NNlayers[1].atNeuronInputs.begin(),thrust::plus<double>());
-				for(int i=1;i<outputsIndex;++i) {
+				which=data[whichBatch];
+				for(int i=0;i<outputsIndex;++i) {
 					ii=i+1;
 					thisSize=hiddenMatrix[i];
-					nextSize=hiddenMatrix[ii];					
-					thrust::transform(NNlayers[i].atNeuronInputs.begin(),NNlayers[i].atNeuronInputs.end(),NNlayers[i].atNeuronOutputs.begin(),sigmoid());
-					//thrust::transform(NNlayers[i].atNeuronInputs.begin(),NNlayers[i].atNeuronInputs.end(),NNlayers[i].derivTemp.begin(),sigmoid_devrivative());
-					//cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, thisSize, batchSize, alpha, NNlayers[i].derivTemp.data().get(), batchSize, beta, NNlayers[i].derivTemp.data().get(), batchSize, NNlayers[i].derivatives.data().get(), thisSize);
-					cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, nextSize, batchSize, thisSize, alpha, NNlayers[i].weightsMatrix.data().get(), nextSize, NNlayers[i].atNeuronOutputs.data().get(), thisSize,  beta, NNlayers[ii].atNeuronInputs.data().get(), nextSize);
-					thrust::transform(NNlayers[ii].atNeuronInputs.begin(),NNlayers[ii].atNeuronInputs.end(),NNlayers[ii].biases.begin(),NNlayers[ii].atNeuronInputs.begin(),thrust::plus<double>());
+					nextSize=hiddenMatrix[ii];
+					cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, nextSize, batchSize, thisSize, alpha, NNlayers[i].weightsMatrix.data().get(), nextSize, which.data().get(), thisSize, beta, NNlayers[ii].atNeuronInputs.data().get(), nextSize);
+					thrust::transform(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[ii].allN),NNlayers[ii].atNeuronOutputs.begin(),forwardFeed_helper(NNlayers[ii].atNeuronInputs.data().get(),NNlayers[ii].biases.data().get()));
+					//thrust::transform(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[ii].allN),NNlayers[ii].atNeuronOutputs.begin(),forwardFeed[ii]);
+					//thrust::transform(fBegin[ii],fEnd[ii],NNlayers[ii].atNeuronOutputs.begin(),forwardFeed);
+					which=NNlayers[ii].atNeuronOutputs;
+					//double local=inputs[t];
+					//local+=biases[t];
+					//inputs[t]=local;
+					//return 1.0/(1.0+exp(-local));
 				}
-				//thrust::transform(NNlayers[outputsIndex].atNeuronInputs.begin(),NNlayers[outputsIndex].atNeuronInputs.end(),NNlayers[outputsIndex].biases.begin(),NNlayers[outputsIndex].atNeuronInputs.begin(),thrust::plus<double>());
-				thrust::transform(NNlayers[outputsIndex].atNeuronInputs.begin(),NNlayers[outputsIndex].atNeuronInputs.end(),NNlayers[outputsIndex].atNeuronOutputs.begin(),sigmoid());
-				//thrust::transform(NNlayers[outputsIndex].atNeuronInputs.begin(),NNlayers[outputsIndex].atNeuronInputs.end(),NNlayers[outputsIndex].derivTemp.begin(),sigmoid_devrivative());
-				//cout << "here1\n";
 
 				//first check how many we got right
-				batchStart=0;
+				/*batchStart=0;
 				batchEnd=numOutputs;
 				//printf("\nbatch starting at: %d\n",itemNum);
 				for(int b=0;b<batchSize;++b) {
@@ -452,64 +550,67 @@ public:
 					iter = thrust::max_element(NNlayers[outputsIndex].atNeuronOutputs.begin()+batchStart, NNlayers[outputsIndex].atNeuronOutputs.begin()+batchEnd);
 					position = iter - NNlayers[outputsIndex].atNeuronOutputs.begin();
 					position -= batchStart;
-					/*printf("output: %d expected: %d\n",position,bLabels[itemNum+b]);
-					for(int ot=batchStart;ot<batchEnd;++ot) {
-						double oo=NNlayers[outputsIndex].atNeuronOutputs[ot];
-						printf("%.5f ",oo);
-					}
-					printf("\n");//*/
+					//printf("output: %d expected: %d\n",position,bLabels[itemNum+b]);
+					//for(int ot=batchStart;ot<batchEnd;++ot) {
+					//	double oo=NNlayers[outputsIndex].atNeuronOutputs[ot];
+					//	printf("%.5f ",oo);
+					//}
+					//printf("\n");
 					if(position==bLabels[itemNum+b]) {
 						++gotRight;
 					}
 					batchStart=batchEnd;
 					batchEnd+=numOutputs;					
-				}
-				//for(int i=0;i<outputsIndex;++i) {
-				//	thrust::fill(innerDeltaB[i].begin(),innerDeltaB[i].end(),0.0);
-				//	thrust::fill(innerDeltaW[i].begin(),innerDeltaW[i].end(),0.0);
-				//}
-				//cout << "here3\n";
+				}//*/
 
 				//Backward propagation
 				mOut=outputsIndex-1;
 				prevSize=hiddenMatrix[mOut];
-				thrust::transform(NNlayers[outputsIndex].atNeuronOutputs.begin(),NNlayers[outputsIndex].atNeuronOutputs.end(),labels[whichBatch].begin(),deltaTemp.begin(),thrust::minus<double>());
-				thrust::transform(NNlayers[outputsIndex].atNeuronInputs.begin(),NNlayers[outputsIndex].atNeuronInputs.end(),innerDeltaB[mOut].begin(),sigmoid_devrivative());
-				thrust::transform(innerDeltaB[mOut].begin(),innerDeltaB[mOut].end(),deltaTemp.begin(),innerDeltaB[mOut].begin(),thrust::multiplies<double>());
+				thrust::transform(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[outputsIndex].allN),innerDeltaB[mOut].begin(),output_helper(NNlayers[outputsIndex].atNeuronOutputs.data().get(),NNlayers[outputsIndex].atNeuronInputs.data().get(),innerDeltaB[mOut].data().get(),labels[whichBatch].data().get()));
 				cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, numOutputs, prevSize, batchSize, alpha, innerDeltaB[mOut].data().get(), numOutputs, NNlayers[mOut].atNeuronOutputs.data().get(), prevSize, beta, innerDeltaW[mOut].data().get(), numOutputs);
-				//cublasDgeam(handle, CUBLAS_OP_T, CUBLAS_OP_T, numOutputs, batchSize, alpha, outputsTemp.data().get(), batchSize, beta, outputsTemp.data().get(), batchSize, NNlayers[outputsIndex].deltas.data().get(), numOutputs);
-				//thrust::transform(NNlayers[outputsIndex].derivatives.begin(),NNlayers[outputsIndex].derivatives.end(),NNlayers[outputsIndex].deltas.begin(),NNlayers[outputsIndex].deltas.begin(),thrust::multiplies<double>());
 
 				--mOut;
 				for(int i=outputsIndex-1;i;--i) {
 					thisSize=hiddenMatrix[i];
 					nextSize=hiddenMatrix[i+1];
 					prevSize=hiddenMatrix[i-1];
-					cublasDgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, thisSize, thisSize, nextSize, alpha, NNlayers[i].weightsMatrix.data().get(), nextSize, innerDeltaB[mOut+1].data().get(), nextSize, beta, innerDeltaB[mOut].data().get(), thisSize);
-					thrust::transform(NNlayers[i].atNeuronInputs.begin(),NNlayers[i].atNeuronInputs.end(),deltaTemp.begin(),sigmoid_devrivative());
-					thrust::transform(innerDeltaB[mOut].begin(),innerDeltaB[mOut].end(),deltaTemp.begin(),innerDeltaB[mOut].begin(),thrust::multiplies<double>());
-					cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, thisSize, prevSize, batchSize, alpha, innerDeltaB[mOut].data().get(), thisSize, NNlayers[i-1].atNeuronOutputs.data().get(), prevSize, beta, innerDeltaW[mOut].data().get(), thisSize);
+					cublasDgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, thisSize, batchSize, nextSize, alpha, NNlayers[i].weightsMatrix.data().get(), nextSize, innerDeltaB[mOut+1].data().get(), nextSize, beta, innerDeltaB[mOut].data().get(), thisSize);
+					if(i!=1) {
+						//zipIterator begin(thrust::make_tuple(NNlayers[i].atNeuronOutputs.begin(), innerDeltaB[mOut].begin()));
+						//zipIterator end(thrust::make_tuple(NNlayers[i].atNeuronOutputs.end(), innerDeltaB[mOut].end()));
+						//thrust::transform(begin,end,innerDeltaB[mOut].begin(),backProp_helper2());
+						//thrust::transform(begin2[i],end2[i],innerDeltaB[mOut].begin(),backProp2);
+						thrust::transform(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[i].allN),innerDeltaB[mOut].begin(),backProp_helper2(NNlayers[i].atNeuronOutputs.data().get(),innerDeltaB[mOut].data().get()));
+						cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, thisSize, prevSize, batchSize, alpha, innerDeltaB[mOut].data().get(), thisSize, NNlayers[i-1].atNeuronOutputs.data().get(), prevSize, beta, innerDeltaW[mOut].data().get(), thisSize);
+					} else {
+						//zipIterator begin(thrust::make_tuple(NNlayers[i].atNeuronInput.begin(), innerDeltaB[mOut].begin()));
+						//zipIterator end(thrust::make_tuple(NNlayers[i].atNeuronInputs.end(), innerDeltaB[mOut].end()));
+						//thrust::transform(begin,end,innerDeltaB[mOut].begin(),backProp_helper());
+						//thrust::transform(begin1[i],end1[i],innerDeltaB[mOut].begin(),backProp);
+						thrust::transform(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[i].allN),innerDeltaB[mOut].begin(),backProp_helper(innerDeltaB[mOut].data().get(),NNlayers[i].atNeuronInputs.data().get()));
+						cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, thisSize, prevSize, batchSize, alpha, innerDeltaB[mOut].data().get(), thisSize, data[whichBatch].data().get(), prevSize, beta, innerDeltaW[mOut].data().get(), thisSize);
+					}
 					--mOut;
 				}
 				/*for(int i=0;i<outputsIndex;++i) {
 					thrust::transform(innerDeltaB[i].begin(),innerDeltaB[i].end(),outerDeltaB[i].begin(),outerDeltaB[i].begin(),thrust::plus<double>());
 					thrust::transform(innerDeltaW[i].begin(),innerDeltaW[i].end(),outerDeltaW[i].begin(),outerDeltaW[i].begin(),thrust::plus<double>());
-				}*/
+				}//*/
 				for(int i=0;i<outputsIndex;++i) {
-					thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(hiddenMatrix[i]*hiddenMatrix[i+1]),update_w(NNlayers[i].weightsMatrix.data().get(),innerDeltaW[i].data().get(),toDivideRMS));
-					thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(hiddenMatrix[i+1]),update_b(NNlayers[i+1].biases.data().get(),innerDeltaB[i].data().get(),toDivideRMS));
+					thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[i].allW),update_w(NNlayers[i].weightsMatrix.data().get(),innerDeltaW[i].data().get(),toDivideRMS));
+					thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[i+1].allN),update_b(NNlayers[i+1].biases.data().get(),innerDeltaB[i].data().get(),toDivideRMS));
 				}//*/
 				++whichBatch;
 			}
 			/*for(int i=0;i<outputsIndex;++i) {
-				thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(hiddenMatrix[i]*hiddenMatrix[i+1]),update_w(NNlayers[i].weightsMatrix.data().get(),outerDeltaW[i].data().get(),toDivideRMS));
-				thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(hiddenMatrix[i+1]),update_b(NNlayers[i+1].biases.data().get(),outerDeltaB[i].data().get(),toDivideRMS));
-			}*/
-			//cout << "here\n";
+				thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[i].allW),update_w(NNlayers[i].weightsMatrix.data().get(),outerDeltaW[i].data().get(),toDivideRMS));
+				thrust::for_each(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[i+1].allN),update_b(NNlayers[i+1].biases.data().get(),outerDeltaB[i].data().get(),toDivideRMS));
+			}//*/
 			if(batchSize<11) {printf("\n");}
 			//printf("Iteration: %d of %llu -- Got %d of %d correct -- learningRate: %.15f\n",epochNum,maxEpochs,gotRight,dataSetSize,*alphaLearn);
 			if(gotRight>maxGotRight){maxGotRight=gotRight;}
-			printf("Training epoch: %d -- Got %d of %d -- max right: %d -- lRate: %.10f",epochNum,gotRight,dataSetSize,maxGotRight,*alphaLearn);
+			//printf("Training epoch: %d -- Got %d of %d -- max right: %d -- lRate: %.5f",epochNum,gotRight,dataSetSize,maxGotRight,*alphaLearn);
+			printf("Training epoch: %d -- lRate: %.5f",epochNum,learningRate);//*alphaLearn);
 			if(!testSetSize) {
 				printf("\n");
 			} else {
@@ -519,20 +620,16 @@ public:
 			gotRight=0;
 			whichBatch=0;
 			for(int t=0;t<testSetSize;t+=batchSize) {
-				thisSize=hiddenMatrix[0];
-				nextSize=hiddenMatrix[1];
-				cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, nextSize, batchSize, thisSize, alpha, NNlayers[0].weightsMatrix.data().get(), nextSize, testData[whichBatch].data().get(), thisSize, beta, NNlayers[1].atNeuronInputs.data().get(), nextSize);
-				thrust::transform(NNlayers[1].atNeuronInputs.begin(),NNlayers[1].atNeuronInputs.end(),NNlayers[1].biases.begin(),NNlayers[1].atNeuronInputs.begin(),thrust::plus<double>());
-				for(int i=1;i<outputsIndex;++i) {
+				which=testData[whichBatch];
+				for(int i=0;i<outputsIndex;++i) {
 					ii=i+1;
 					thisSize=hiddenMatrix[i];
-					nextSize=hiddenMatrix[i+1];					
-					thrust::transform(NNlayers[i].atNeuronInputs.begin(),NNlayers[i].atNeuronInputs.end(),NNlayers[i].atNeuronOutputs.begin(),sigmoid());
-					cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, nextSize, batchSize, thisSize, alpha, NNlayers[i].weightsMatrix.data().get(), nextSize, NNlayers[i].atNeuronOutputs.data().get(), thisSize,  beta, NNlayers[ii].atNeuronInputs.data().get(), nextSize);
-					thrust::transform(NNlayers[ii].atNeuronInputs.begin(),NNlayers[ii].atNeuronInputs.end(),NNlayers[ii].biases.begin(),NNlayers[ii].atNeuronInputs.begin(),thrust::plus<double>());
+					nextSize=hiddenMatrix[ii];
+					cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, nextSize, batchSize, thisSize, alpha, NNlayers[i].weightsMatrix.data().get(), nextSize, which.data().get(), thisSize, beta, NNlayers[ii].atNeuronInputs.data().get(), nextSize);
+					thrust::transform(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[ii].allN),NNlayers[ii].atNeuronOutputs.begin(),forwardFeed_helper(NNlayers[ii].atNeuronInputs.data().get(),NNlayers[ii].biases.data().get()));
+					//thrust::transform(thrust::make_counting_iterator(0),thrust::make_counting_iterator(NNlayers[ii].allN),NNlayers[ii].atNeuronOutputs.begin(),forwardFeed[ii]);
+					which=NNlayers[ii].atNeuronOutputs;
 				}
-				//thrust::transform(NNlayers[outputsIndex].atNeuronInputs.begin(),NNlayers[outputsIndex].atNeuronInputs.end(),NNlayers[outputsIndex].biases.begin(),NNlayers[outputsIndex].atNeuronInputs.begin(),thrust::plus<double>());
-				thrust::transform(NNlayers[outputsIndex].atNeuronInputs.begin(),NNlayers[outputsIndex].atNeuronInputs.end(),NNlayers[outputsIndex].atNeuronOutputs.begin(),sigmoid());
 				batchStart=0;
 				batchEnd=numOutputs;
 				//printf("\nbatch starting at: %d\n",t);
@@ -554,9 +651,36 @@ public:
 				}
 				++whichBatch;
 			}
-			if(gotRight>maxTestRight){maxTestRight=gotRight;}
-			printf("Testing -- Got %d of %d -- max right: %d\n",gotRight,testSetSize,maxTestRight);
+			if(gotRight>maxTestRight && testSetSize){maxTestRight=gotRight;}
+			if(vlRate) {
+				//if(epochNum>1) {
+					double cutOff=0.94;
+					double percLearned=(double)gotRight/(double)testSetSize;
+					if(percLearned<0.99 && percLearned>cutOff) {
+						percLearned=1.0-percLearned;
+						//percLearned=(1.0-percLearned)*2.0;
+						//percLearned=(1.0-percLearned)/2.0;
+						//percLearned=pow(1.0-percLearned,(double)layers);
+						//percLearned=pow(1.0-percLearned,2.0);
+						//alfLearn=-(percLearned*(learningRate/2.0)+(learningRate/2.0));
+						learningRate=(cutOff*origLearningRate)+percLearned;//-(percLearned*origLearningRate);
+						toDivideRMS=learningRate/(double)batchSize;
+						//toDivideRMS=learningRate/(double)numBatches;
+					} else {
+						if(percLearned<0.99) {
+							learningRate=origLearningRate;
+							toDivideRMS=learningRate/(double)batchSize;
+							//toDivideRMS=learningRate/(double)numBatches;
+						}
+					}
+				//}
+			}
+			endTime=high_resolution_clock::now();
+			seconds=duration_cast<microseconds>(endTime-startTime).count()/1000000.0;
+			totalTime+=seconds;
+			printf("Testing -- Got %d of %d -- max right: %d -- sec: %.5f -- totalTime: %.5f\n",gotRight,testSetSize,maxTestRight,seconds,totalTime);
 		}
+		saveState("Olga2-");
 	}
 
 	void saveState(string outFile) {
@@ -566,18 +690,22 @@ public:
 		if(oFile.is_open()) {
 			oFile.write((char*)&epoch,sizeof(ULLI));
 			oFile.write((char*)&layers,sizeof(ULLI));
-			oFile.write((char*)&maxWeightsMatrix,sizeof(ULLI));
 			for(int i=0;i<hiddenMatrix.size();++i) {
 				oFile.write((char*)&hiddenMatrix[i],sizeof(int));
 			}
 			oFile.write((char*)&batchSize,sizeof(int));
 			oFile.write((char*)&learningRate,sizeof(double));
 			for(int i=0;i<outputsIndex;++i) {
-				int end=NNlayers[i].thisSize*NNlayers[i].nextSize;
-				for(int j=0;j<end;++j) {
+				for(int j=0;j<NNlayers[i].allW;++j) {
 					double o=NNlayers[i].weightsMatrix[j];
 					oFile.write((char*)&o,sizeof(double));
-				}		
+				}
+			}
+			for(int i=1;i<layers;++i) {
+				for(int j=0;j<NNlayers[i].allN;++j) {
+					double o=NNlayers[i].biases[j];
+					oFile.write((char*)&o,sizeof(double));
+				}
 			}
 			oFile.close();
 		}
@@ -590,7 +718,6 @@ public:
 		if(oFile.is_open()) {
 			oFile.read((char*)&epoch,sizeof(ULLI));
 			oFile.read((char*)&layers,sizeof(ULLI));
-			oFile.read((char*)&maxWeightsMatrix,sizeof(ULLI));
 			hiddenMatrix.clear();
 			for(int i=0;i<layers;++i) {
 				int l=0;
@@ -603,23 +730,28 @@ public:
 			outputsIndex=layers-1;
 			numInputs=hiddenMatrix[0]-1;
 			numOutputs=hiddenMatrix[outputsIndex];
-			//weightsTemp=device_vector<double>(maxWeightsMatrix,0.0);
 
 			NNlayers.clear();
 			int type=INPUT;
 			for(int i=0;i<outputsIndex;++i) {
 				if(i){type=HIDDEN;}
 				NNlayers.push_back(NN_layer(hiddenMatrix[i],hiddenMatrix[i+1],batchSize,type));
-				int end=NNlayers[i].thisSize*NNlayers[i].nextSize;
-				for(int j=0;j<end;++j) {
+				for(int j=0;j<NNlayers[i].allW;++j) {
 					double o=0.0;
 					oFile.read((char*)&o,sizeof(double));
 					NNlayers[i].weightsMatrix.push_back(o);
-				}
+				}		
 				NNlayers[i].setupLayer(false);
 			}
 			NNlayers.push_back(NN_layer(hiddenMatrix[outputsIndex],0,batchSize,OUTPUT));
 			NNlayers.back().setupLayer(false);
+			for(int i=1;i<layers;++i) {
+				for(int j=0;j<NNlayers[i].allN;++j) {
+					double o=0.0;
+					oFile.read((char*)&o,sizeof(double));
+					NNlayers[i].biases.push_back(o);
+				}		
+			}			
 			oFile.close();
 		}
 		cout << "Done\n";
@@ -627,7 +759,7 @@ public:
 	vector<NN_layer> NNlayers;
 
 private:
-	ULLI epoch, maxElement, layers, maxEpochs, maxWeightsMatrix, maxDeltaMatrix;
+	ULLI epoch, maxElement, layers, maxEpochs;//, maxWeightsMatrix, maxDeltaMatrix;
 	int outputsIndex, dataSetSize, numInputs, numOutputs, batchSize;
 	double RMS, minRMS, toDivideRMS, RMSwanted, learningRate;
 	vector<int> hiddenMatrix;
@@ -638,10 +770,10 @@ private:
 
 	vector<vector<double>> neuralNet_weights_host;
 	//device_vector<double> weightsTemp;
-	device_vector<double> deltaTemp;
+	//device_vector<double> deltaTemp;
 };
 
-void doMain(int my_rank, string hostname, int num_nodes, vector<int> &inputHiddenLayers, int batchSize, int doDataSetSize, double lRate, string inFile, string outFile) {
+void doMain(int my_rank, string hostname, int num_nodes, vector<int> &inputHiddenLayers, int batchSize, int doDataSetSize, double lRate, string inFile, string outFile, bool vlRate) {
 
 	if(doMNISTprob) {
 		vector<int> hiddenMatrix;
@@ -736,7 +868,7 @@ void doMain(int my_rank, string hostname, int num_nodes, vector<int> &inputHidde
 		auto start = high_resolution_clock::now();
 		//go.train_floats(trainData,trainLabels,1000000,0.0001,trainLabels2);
 		//go.train(trainData,trainLabels,1000000,0.0001,trainLabels2, doDataSetSize);//*/
-		go.train_MatMul(trainData,trainLabels, 1000000, 0.0001, doDataSetSize, lRate, testData, testLabels);//*/
+		go.train_MatMul(trainData,trainLabels, 1000000, 0.0001, doDataSetSize, lRate, testData, testLabels, vlRate);//*/
 		//go.evaluate(testData,testLabels,testLabels2, doDataSetSize);
 		auto endTime = high_resolution_clock::now();
 		printTime(start,endTime);
@@ -767,7 +899,7 @@ void doMain(int my_rank, string hostname, int num_nodes, vector<int> &inputHidde
 				countingLabels[i][j]=(double)bitset<BITS>((i+1)%size)[(BITS-1)-j];
 			}
 		}
-		test.train_MatMul(countingTest,countingLabels,1000000,0.00001,size,lRate,countingTest,countingLabels);
+		test.train_MatMul(countingTest,countingLabels,1000000,0.00001,size,lRate,countingTest,countingLabels,vlRate);
 	}
 }
 
@@ -909,7 +1041,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	doMain(my_rank, hostname, num_nodes, inputHiddenLayers, batchSize, doDataSetSize, lRate, inFile, outFile);
+	doMain(my_rank, hostname, num_nodes, inputHiddenLayers, batchSize, doDataSetSize, lRate, inFile, outFile, vlRate);
 
 	MPI_Finalize();
 	//doMain(0,"",0);
