@@ -12,15 +12,18 @@ import os
 import scipy.ndimage
 import matplotlib.pyplot as plot
 import threading
-import _thread as thread
+import sys
 
 from skimage import measure, morphology
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-# INPUT_FOLDER = '../temp_data/'
-INPUT_FOLDER = '/home/jannengm/workspace/CIS467/temp_data/'
-patients = os.listdir(INPUT_FOLDER)
-patients.sort()
+if len(sys.argv) < 2:
+    error_msg = 'Expected path to single patient.\nUsage: ' + sys.argv[0] + ' [path to DICOM directory]'
+
+INPUT_FOLDER = sys.argv[1]
+# INPUT_FOLDER = '/home/jannengm/workspace/CIS467/temp_data/'
+# patients = os.listdir(INPUT_FOLDER)
+# patients.sort()
 
 MIN_BOUND = -1000.0
 MAX_BOUND = 400.0
@@ -169,6 +172,23 @@ def zero_center(image):
     return image
 
 
+patient = load_scan(INPUT_FOLDER)
+patient_pixels = get_pixels_hu(patient)
+pixels_resampled, spacing = resample(patient_pixels, patient, [1,1,1])
+segmented_lungs = segment_lung_mask(pixels_resampled, False)
+
+# with open("patient_{0}.dat".format(sys.argv[1]),"w+") as f:
+with open("{0}.dat".format(os.path.basename(sys.argv[1])), "w+") as f:
+    for axis in segmented_lungs:
+        f.write("/1\n")
+        for current_slice in axis:
+            f.write("/2\n")
+            for hu_value in current_slice:
+                f.write(str(hu_value))
+                f.write(",")
+            f.write('\n')
+
+
 # for index, patient in enumerate(patients):
 #     patient = load_scan(INPUT_FOLDER + patient)
 #     patient_pixels = get_pixels_hu(patient)
@@ -186,51 +206,51 @@ def zero_center(image):
 #                 f.write('\n')
 
 
-class myThread (threading.Thread):
-    def __init__(self, index, patient):
-        threading.Thread.__init__(self)
-        # self.threadID = threadID
-        # self.name = name
-        # self.counter = counter
-        self.index = index
-        self.patient = patient
-
-    def run(self):
-        patient = load_scan(INPUT_FOLDER + self.patient)
-        patient_pixels = get_pixels_hu(patient)
-        pixels_resampled, spacing = resample(patient_pixels, patient, [1, 1, 1])
-        segmented_lungs = segment_lung_mask(pixels_resampled, False)
-
-        with open("patient_{0}.dat".format(self.index), "w+") as f:
-            for axis in segmented_lungs:
-                f.write("/1\n")
-                for current_slice in axis:
-                    f.write("/2\n")
-                    for hu_value in current_slice:
-                        f.write(str(hu_value))
-                        f.write(",")
-                    f.write('\n')
-        print("Exiting thread")
-
-
-# Get the total number of patients in the target directory
-num_patients = len(patients)
-patients_processed = 0
-thread_count = 0
-
-# while patients_processed < num_patients:
-#     while thread_count < MAX_THREADS:
-# threadLock = threading.Lock()
-# threads = []
-
-for index, patient in enumerate(patients):
-    thread = myThread(index, patient)
-    thread.start()
-    # threads.append(thread)
-
-# for t in threads:
-#     t.join()
-print("Exiting Main Thread")
+# class myThread (threading.Thread):
+#     def __init__(self, index, patient):
+#         threading.Thread.__init__(self)
+#         # self.threadID = threadID
+#         # self.name = name
+#         # self.counter = counter
+#         self.index = index
+#         self.patient = patient
+#
+#     def run(self):
+#         patient = load_scan(INPUT_FOLDER + self.patient)
+#         patient_pixels = get_pixels_hu(patient)
+#         pixels_resampled, spacing = resample(patient_pixels, patient, [1, 1, 1])
+#         segmented_lungs = segment_lung_mask(pixels_resampled, False)
+#
+#         with open("patient_{0}.dat".format(self.index), "w+") as f:
+#             for axis in segmented_lungs:
+#                 f.write("/1\n")
+#                 for current_slice in axis:
+#                     f.write("/2\n")
+#                     for hu_value in current_slice:
+#                         f.write(str(hu_value))
+#                         f.write(",")
+#                     f.write('\n')
+#         print("Exiting thread")
+#
+#
+# # Get the total number of patients in the target directory
+# num_patients = len(patients)
+# patients_processed = 0
+# thread_count = 0
+#
+# # while patients_processed < num_patients:
+# #     while thread_count < MAX_THREADS:
+# # threadLock = threading.Lock()
+# # threads = []
+#
+# for index, patient in enumerate(patients):
+#     thread = myThread(index, patient)
+#     thread.start()
+#     # threads.append(thread)
+#
+# # for t in threads:
+# #     t.join()
+# print("Exiting Main Thread")
 
 
 #---------------------------------------------------------------------------------------------------------- load_array.cpp will be based off this                
