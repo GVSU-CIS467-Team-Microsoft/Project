@@ -5,6 +5,14 @@
 #you also need these 2 python3-scipy python3-matplotlib, however I ran into a lot of erros with these and found things worked much better when installing them using pip3 (you will need python3-setuptools if you don't have it already)
 
 #if you already had any of these packages installed and something doesn't work, try upgdating the package to the most recent version before troubleshooting further.
+
+
+#other info
+
+#Pixel spacing
+#Section 10.7.1.3: Pixel Spacing
+#The first value is the row spacing in mm, that is the spacing between the centers of adjacent rows, or vertical spacing. The second value is the column spacing in mm, that is the spacing between the centers of adjacent columns, or horizontal spacing.
+
 import numpy as np
 import pandas as pd
 import dicom
@@ -39,6 +47,7 @@ def load_scan(path):
 
 def get_pixels_hu(slices):
     image = np.stack([s.pixel_array for s in slices])
+    print("shape of one slice: ")
     print(slices[0].pixel_array.shape)
     # Convert to int16 (from sometimes int16), 
     # should be possible as values should always be low enough (<32k)
@@ -117,6 +126,7 @@ def segment_lung_mask(image, fill_lung_structures=True):
     # not actually binary, but 1 and 2. 
     # 0 is treated as background, which we do not want
     binary_image = np.array(image > -320, dtype=np.int8)+1
+
     labels = measure.label(binary_image)
     
     # Pick the pixel in the very corner to determine which label is air.
@@ -163,14 +173,32 @@ def zero_center(image):
     image = image - PIXEL_MEAN
     return image
 
+def resize_to_dimensions(array,x,y,z):
+    oldx = array.shape[0] 
+    oldy = array.shape[1]
+    oldz = array.shape[2]
+    xRatio = x / oldx
+    yRatio = y / oldy
+    zRatio = z / oldz
+    return scipy.ndimage.zoom(array, (xRatio,yRatio,zRatio));
 
+# def 3dArrayToOneByThreeArray(array):
+#     returnArr = []
+#     for axis in array:
+#         for current_slice in axis:
+#             for hu_value in current_slice:
+                
 
 for index, patient in enumerate(patients):
     patient = load_scan(INPUT_FOLDER + patient)
     patient_pixels = get_pixels_hu(patient)
-    pixels_resampled, spacing = resample(patient_pixels, patient, [1,1,1])
+    
+    #pixels_resampled, spacing = resample(patient_pixels, patient, [1,1,1])
+    pixels_resampled = resize_to_dimensions(patient_pixels, 335, 335, 335);
     segmented_lungs = segment_lung_mask(pixels_resampled, False)
-
+    #if you want to visualize the data uncomment the below 2 lines
+    #plot_3d(segmented_lungs, 0) 
+    #break;
     with open("patient_{0}.dat".format(index),"w+") as f:
         for axis in segmented_lungs:
             f.write("/1\n")
