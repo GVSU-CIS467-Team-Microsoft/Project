@@ -45,7 +45,8 @@ echo ${available[@]}
 host_num=0
 for PATIENT in $STAGE_1_SOURCE/*; do
 	echo "Running " $PATIENT " on " ${available[$host_num]}
-	
+	ssh -f ${available[$host_num]} "cd $STAGE_1_PREPROCESSED; python3 $SCRIPT_PATH $PATIENT > /dev/null; echo completed $PATIENT; exit"
+
 	((host_num+=1))
 	if(( "$host_num" >= "${#available[@]}")); then
 		((host_num=0))	
