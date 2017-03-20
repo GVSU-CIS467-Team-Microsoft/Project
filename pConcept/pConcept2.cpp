@@ -8,6 +8,9 @@
 //If you don't want to install OpenMPI and Cuda toolkit 8.0,
 //simply compile with g++ pConcept.cpp -o pConcept -std=c++11
 //since the Makefile only works on my machine with Cuda and OpenMPI
+//Also you'll need to comment out all 'thrust' header includes
+//as well as <mpi.h>, and <imebra/imebra.h> both these require
+//separate libraries in order for the program to run correctly.
 
 #include <thrust/version.h>
 #include <thrust/host_vector.h>
@@ -32,7 +35,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/extrema.h>
-//#include <mpi.h>
+#include <mpi.h>
 #include "helper_cuda.h"
 #include "helper_string.h"
 #include "intarray2bmp.hpp"
@@ -41,7 +44,7 @@
 #include <limits.h>
 #include <float.h>
 #include <random>
-//#include <imebra/imebra.h>
+#include <imebra/imebra.h>
 using namespace std;
 using namespace thrust;
 using namespace chrono;
@@ -77,7 +80,7 @@ struct doRandomFloats {
 };
 
 //index into a connWeights layer is fromNode*NumberOfNodesInNextLayer+toNode
-// for 3 nodes in first layer and 5 nodes in second layer
+// for example 3 nodes in first layer and 5 nodes in second layer
 //	0 to 0	0
 // 	0 to 1	1
 //	0 to 2	2
@@ -148,13 +151,14 @@ struct forwardProp_functor_float : public thrust::unary_function<int, void> {
 	forwardProp_functor_float(float *_lDeriv, float *_connWeights, float *_netPrev, float *_netThis, int _sizePrev, int _sizeThis) : 
 		lDeriv(_lDeriv), connWeights(_connWeights), netPrev(_netPrev), netThis(_netThis), sizePrev(_sizePrev), sizeThis(_sizeThis) {}
 	__device__ void operator()(int t) {
-		netThis[t]=0.0;
+		float local=0.0f;
 		for(int i=0;i<sizePrev;++i) {
 			//printf("t: %d (i*sizeThis+t): %d i: %d, sizePrev: %d, sizeThis: %d\n",t,i*sizeThis+t,i,sizePrev,sizeThis);
-			netThis[t]+=(connWeights[i*sizeThis+t]*netPrev[i]);
+			local+=(connWeights[i*sizeThis+t]*netPrev[i]);
 		}
-		netThis[t]=1.0 / (1.0 + exp(-netThis[t]));
-		lDeriv[t]=netThis[t]*(1.0-netThis[t]);
+		local=1.0f/(1.0f+exp(-local));
+		netThis[t]=local;
+		lDeriv[t]=local*(1.0f-local);
 	}
 };
 struct backwardProp_functor_float : public thrust::unary_function<int, void> {
@@ -170,14 +174,18 @@ struct backwardProp_functor_float : public thrust::unary_function<int, void> {
 		lDeriv(_lDeriv), connWeights(_connWeights), netErrNext(_netErrNext), netErrThis(_netErrThis), netThis(_netThis), sizeNext(_sizeNext), sizeThis(_sizeThis),
 		learningRate(lRate) {}
 	__device__ void operator()(int t) {
-		netErrThis[t]=0.0;
+		//netErrThis[t]=0.0;
+		float local=0.0f;
 		int target=t*sizeNext;
+		float local2=netThis[t];
+		float local3;
 		for(int i=0;i<sizeNext;++i) {
-			netErrThis[t]+=(connWeights[target]*netErrNext[i]);
-			connWeights[target]-=(learningRate*netErrNext[i]*netThis[t]);
+			local3=netErrNext[i];
+			local+=(connWeights[target]*local3);
+			connWeights[target]-=(learningRate*local3*local2);
 			++target;
 		}
-		netErrThis[t]*=lDeriv[t];
+		netErrThis[t]=local*lDeriv[t];
 	}
 };
 
@@ -611,7 +619,7 @@ int main(int argc, char *argv[]) {
 	//srandom(time_point_cast<nanoSec>(high_resolution_clock::now()).time_since_epoch().count());
 	srand((unsigned int)time_point_cast<nanoSec>(high_resolution_clock::now()).time_since_epoch().count());
 
-	/*int my_rank, num_nodes;
+	int my_rank, num_nodes;
 	MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &num_nodes);
@@ -619,7 +627,7 @@ int main(int argc, char *argv[]) {
     gethostname(my_host, 100);
     string hostname=string(my_host);
 
-	if(hostname=="quattro.cis.gvsu.edu" || hostname=="ULaptop" || hostname=="Usolid") {*/
+	if(hostname=="quattro.cis.gvsu.edu" || hostname=="ULaptop" || hostname=="Usolid") {
 
 		ULLI totalCudaMem=0;
 		size_t totalFreeCudaMem;
@@ -683,15 +691,15 @@ int main(int argc, char *argv[]) {
 		}
 
 		if(totalCudaMem) {
-			//cout << string(my_host) << ": total Cuda Memory: " << totalCudaMem << endl;
-			cout << "Total Cuda Memory: " << totalCudaMem << endl;
+			cout << string(my_host) << ": total Cuda Memory: " << totalCudaMem << endl;
+			//cout << "Total Cuda Memory: " << totalCudaMem << endl;
 		}
-	/*}
+	}
 
 	doMain(my_rank, hostname, num_nodes);
 
-	MPI_Finalize();*/
-	doMain(0,"",0);
+	MPI_Finalize();
+	//doMain(0,"",0);
 
 	return 0;
 }

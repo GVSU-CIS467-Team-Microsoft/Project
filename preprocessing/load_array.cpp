@@ -12,11 +12,10 @@
 #include <regex>
 #include <fstream>
 
-std::vector<std::vector<std::vector<int>>> read(std::string filename){
-  
-  std::vector<std::vector<std::vector<int>>> overall_array = std::vector<std::vector<std::vector<int>>>();
-  int outer_index = -1;
-  int inner_index = -1;
+std::vector<short> read(std::string filename){
+  std::vector<short> flattened = std::vector<short>();
+  short outer_index = -1;
+  short inner_index = -1;
   std::ifstream input(filename);
 
 
@@ -29,25 +28,27 @@ std::vector<std::vector<std::vector<int>>> read(std::string filename){
       if(it->str().compare("/1") == 0){
 	outer_index++;;
 	inner_index = -1;
-	overall_array.push_back(std::vector<std::vector<int>>());
       }else if(it->str().compare("/2") == 0){
 	inner_index++;
-	overall_array.at(outer_index).push_back(std::vector<int>());
       }else{
 	if(it->str().compare("") != 0){
-	  overall_array.at(outer_index).at(inner_index).push_back(std::stoi(it->str()));
+	  flattened.push_back(std::stoi(it->str()));
 	}
       }
     }
   }
-  //return overall_array;
-  printf("overall_array size: %lu\n", overall_array.size());
-  printf("overall_array first item size: %lu\n", overall_array.at(0).size());
-  printf("overall_array first items first item size: %lu\n", overall_array.at(0).at(0).size());
+  //printf("flattened array size is: %lu bytes or %f megabytes", flattened.size() * sizeof(short), flattened.size() * sizeof(short) / 1024.0 / 1024.0);
+  return flattened;
 }
 
+std::vector<short> read_numbered_file(std::string parent_directory, int file_num){
+  std::string name = (new std::string(parent_directory))->append("/patient_" + std::to_string(file_num) + ".dat");
+  //printf("name: %s\n", name.c_str());
+  return read(name);
+}
 
 //for testing
 int main(int argc, char **argv){
-  read("patient_0.dat");
+  //read("patient_0.dat"); //file must be in same directory
+  read_numbered_file("patient_data", 0);
 }

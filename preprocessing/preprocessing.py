@@ -5,6 +5,13 @@
 #you also need these 2 python3-scipy python3-matplotlib, however I ran into a lot of erros with these and found things worked much better when installing them using pip3 (you will need python3-setuptools if you don't have it already)
 
 #if you already had any of these packages installed and something doesn't work, try upgdating the package to the most recent version before troubleshooting further.
+
+#other info
+
+#Pixel spacing
+#Section 10.7.1.3: Pixel Spacing
+#The first value is the row spacing in mm, that is the spacing between the centers of adjacent rows, or vertical spacing. The second value is the column spacing in mm, that is the spacing between the centers of adjacent columns, or horizontal spacing.
+
 import numpy as np
 import pandas as pd
 import dicom
@@ -17,20 +24,9 @@ import sys
 from skimage import measure, morphology
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-if len(sys.argv) < 2:
-    error_msg = 'Expected path to single patient.\nUsage: ' + sys.argv[0] + ' [path to DICOM directory]'
-
-INPUT_FOLDER = sys.argv[1]
-# INPUT_FOLDER = '/home/jannengm/workspace/CIS467/temp_data/'
-# patients = os.listdir(INPUT_FOLDER)
-# patients.sort()
-
 MIN_BOUND = -1000.0
 MAX_BOUND = 400.0
 PIXEL_MEAN = 0.25
-
-MAX_THREADS = 6
-
 
 # Load the scans in given folder path
 def load_scan(path):
@@ -47,6 +43,9 @@ def load_scan(path):
 
 def get_pixels_hu(slices):
     image = np.stack([s.pixel_array for s in slices])
+
+    print("shape of one slice: ")
+
     print(slices[0].pixel_array.shape)
     # Convert to int16 (from sometimes int16), 
     # should be possible as values should always be low enough (<32k)
@@ -125,6 +124,7 @@ def segment_lung_mask(image, fill_lung_structures=True):
     # not actually binary, but 1 and 2. 
     # 0 is treated as background, which we do not want
     binary_image = np.array(image > -320, dtype=np.int8)+1
+
     labels = measure.label(binary_image)
     
     # Pick the pixel in the very corner to determine which label is air.
@@ -171,30 +171,39 @@ def zero_center(image):
     image = image - PIXEL_MEAN
     return image
 
+def resize_to_dimensions(array,x,y,z):
+    oldx = array.shape[0] 
+    oldy = array.shape[1]
+    oldz = array.shape[2]
+    xRatio = x / oldx
+    yRatio = y / oldy
+    zRatio = z / oldz
+    return scipy.ndimage.zoom(array, (xRatio,yRatio,zRatio));
 
-patient = load_scan(INPUT_FOLDER)
-patient_pixels = get_pixels_hu(patient)
-pixels_resampled, spacing = resample(patient_pixels, patient, [1,1,1])
-segmented_lungs = segment_lung_mask(pixels_resampled, False)
+# def 3dArrayToOneByThreeArray(array):
+#     returnArr = []
+#     for axis in array:
+#         for current_slice in axis:
+#             for hu_value in current_slice:
+                
+# -----------------------------------------------------------------------------
+# Uncomment the code below to run for all patients
+# -----------------------------------------------------------------------------
 
-# with open("patient_{0}.dat".format(sys.argv[1]),"w+") as f:
-with open("{0}.dat".format(os.path.basename(sys.argv[1])), "w+") as f:
-    for axis in segmented_lungs:
-        f.write("/1\n")
-        for current_slice in axis:
-            f.write("/2\n")
-            for hu_value in current_slice:
-                f.write(str(hu_value))
-                f.write(",")
-            f.write('\n')
-
-
+# INPUT_FOLDER = '../temp_data/'
+# patients = os.listdir(INPUT_FOLDER)
+# patients.sort()
+#
 # for index, patient in enumerate(patients):
 #     patient = load_scan(INPUT_FOLDER + patient)
 #     patient_pixels = get_pixels_hu(patient)
-#     pixels_resampled, spacing = resample(patient_pixels, patient, [1,1,1])
-#     segmented_lungs = segment_lung_mask(pixels_resampled, False)
 #
+#     #pixels_resampled, spacing = resample(patient_pixels, patient, [1,1,1])
+#     pixels_resampled = resize_to_dimensions(patient_pixels, 335, 335, 335);
+#     segmented_lungs = segment_lung_mask(pixels_resampled, False)
+#     #if you want to visualize the data uncomment the below 2 lines
+#     #plot_3d(segmented_lungs, 0)
+#     #break;
 #     with open("patient_{0}.dat".format(index),"w+") as f:
 #         for axis in segmented_lungs:
 #             f.write("/1\n")
@@ -206,51 +215,32 @@ with open("{0}.dat".format(os.path.basename(sys.argv[1])), "w+") as f:
 #                 f.write('\n')
 
 
-# class myThread (threading.Thread):
-#     def __init__(self, index, patient):
-#         threading.Thread.__init__(self)
-#         # self.threadID = threadID
-#         # self.name = name
-#         # self.counter = counter
-#         self.index = index
-#         self.patient = patient
-#
-#     def run(self):
-#         patient = load_scan(INPUT_FOLDER + self.patient)
-#         patient_pixels = get_pixels_hu(patient)
-#         pixels_resampled, spacing = resample(patient_pixels, patient, [1, 1, 1])
-#         segmented_lungs = segment_lung_mask(pixels_resampled, False)
-#
-#         with open("patient_{0}.dat".format(self.index), "w+") as f:
-#             for axis in segmented_lungs:
-#                 f.write("/1\n")
-#                 for current_slice in axis:
-#                     f.write("/2\n")
-#                     for hu_value in current_slice:
-#                         f.write(str(hu_value))
-#                         f.write(",")
-#                     f.write('\n')
-#         print("Exiting thread")
-#
-#
-# # Get the total number of patients in the target directory
-# num_patients = len(patients)
-# patients_processed = 0
-# thread_count = 0
-#
-# # while patients_processed < num_patients:
-# #     while thread_count < MAX_THREADS:
-# # threadLock = threading.Lock()
-# # threads = []
-#
-# for index, patient in enumerate(patients):
-#     thread = myThread(index, patient)
-#     thread.start()
-#     # threads.append(thread)
-#
-# # for t in threads:
-# #     t.join()
-# print("Exiting Main Thread")
+# -----------------------------------------------------------------------------------
+# The code below runs for only a single patient specified as a command line parameter
+# -----------------------------------------------------------------------------------
+
+if len(sys.argv) < 2:
+    error_msg = 'Expected path to single patient.\nUsage: ' + sys.argv[0] + ' [path to DICOM directory]'
+
+INPUT_FOLDER = sys.argv[1]
+patient = load_scan(INPUT_FOLDER)
+patient_pixels = get_pixels_hu(patient)
+
+# pixels_resampled, spacing = resample(patient_pixels, patient, [1,1,1])
+pixels_resampled = resize_to_dimensions(patient_pixels, 335, 335, 335)
+segmented_lungs = segment_lung_mask(pixels_resampled, False)
+# if you want to visualize the data uncomment the below 2 lines
+# plot_3d(segmented_lungs, 0)
+# break;
+with open("{0}.dat".format(os.path.basename(sys.argv[1])), "w+") as f:
+    for axis in segmented_lungs:
+        f.write("/1\n")
+        for current_slice in axis:
+            f.write("/2\n")
+            for hu_value in current_slice:
+                f.write(str(hu_value))
+                f.write(",")
+            f.write('\n')
 
 
 #---------------------------------------------------------------------------------------------------------- load_array.cpp will be based off this                
