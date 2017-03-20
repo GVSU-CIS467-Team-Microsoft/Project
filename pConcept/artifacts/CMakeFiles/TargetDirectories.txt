@@ -1,0 +1,9 @@
+/home/ron-patrick/Documents/Capstone/pConcept/artifacts/CMakeFiles/edit_cache.dir
+/home/ron-patrick/Documents/Capstone/pConcept/artifacts/CMakeFiles/package_source.dir
+/home/ron-patrick/Documents/Capstone/pConcept/artifacts/CMakeFiles/rebuild_cache.dir
+/home/ron-patrick/Documents/Capstone/pConcept/artifacts/CMakeFiles/package.dir
+/home/ron-patrick/Documents/Capstone/pConcept/artifacts/CMakeFiles/imebra.dir
+/home/ron-patrick/Documents/Capstone/pConcept/artifacts/CMakeFiles/install/strip.dir
+/home/ron-patrick/Documents/Capstone/pConcept/artifacts/CMakeFiles/install/local.dir
+/home/ron-patrick/Documents/Capstone/pConcept/artifacts/CMakeFiles/list_install_components.dir
+/home/ron-patrick/Documents/Capstone/pConcept/artifacts/CMakeFiles/install.dir

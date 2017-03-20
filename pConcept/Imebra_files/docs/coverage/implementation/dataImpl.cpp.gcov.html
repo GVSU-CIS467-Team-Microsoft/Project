@@ -1,0 +1,706 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - extracted.info - implementation/dataImpl.cpp</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../index.html">top level</a> - <a href="index.html">implementation</a> - dataImpl.cpp<span style="font-size: 80%;"> (source / <a href="dataImpl.cpp.func-sort-c.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">extracted.info</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">130</td>
+            <td class="headerCovTableEntry">156</td>
+            <td class="headerCovTableEntryMed">83.3 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2017-01-09 21:49:52</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">21</td>
+            <td class="headerCovTableEntry">22</td>
+            <td class="headerCovTableEntryHi">95.5 %</td>
+          </tr>
+          <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : /*</a>
+<span class="lineNum">       2 </span>            : 
+<span class="lineNum">       3 </span>            : Imebra 4.0.8.1 changeset b15762068bd2
+<span class="lineNum">       4 </span>            : 
+<span class="lineNum">       5 </span>            : Imebra: a C++ Dicom library
+<span class="lineNum">       6 </span>            : 
+<span class="lineNum">       7 </span>            : Copyright (c) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016
+<span class="lineNum">       8 </span>            : by Paolo Brandoli/Binarno s.p.
+<span class="lineNum">       9 </span>            : 
+<span class="lineNum">      10 </span>            : All rights reserved.
+<span class="lineNum">      11 </span>            : 
+<span class="lineNum">      12 </span>            : This program is free software; you can redistribute it and/or modify
+<span class="lineNum">      13 </span>            :  it under the terms of the GNU General Public License version 2 as published by
+<span class="lineNum">      14 </span>            :  the Free Software Foundation.
+<span class="lineNum">      15 </span>            : 
+<span class="lineNum">      16 </span>            : This program is distributed in the hope that it will be useful,
+<span class="lineNum">      17 </span>            :  but WITHOUT ANY WARRANTY; without even the implied warranty of
+<span class="lineNum">      18 </span>            :  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+<span class="lineNum">      19 </span>            :  GNU General Public License for more details.
+<span class="lineNum">      20 </span>            : 
+<span class="lineNum">      21 </span>            : You should have received a copy of the GNU General Public License
+<span class="lineNum">      22 </span>            :  along with this program; if not, write to the Free Software
+<span class="lineNum">      23 </span>            :  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+<span class="lineNum">      24 </span>            : 
+<span class="lineNum">      25 </span>            : -------------------
+<span class="lineNum">      26 </span>            : 
+<span class="lineNum">      27 </span>            : If you want to use Imebra commercially then you have to buy the commercial
+<span class="lineNum">      28 </span>            :  license available at http://imebra.com
+<span class="lineNum">      29 </span>            : 
+<span class="lineNum">      30 </span>            : After you buy the commercial license then you can use Imebra according
+<span class="lineNum">      31 </span>            :  to the terms described in the Imebra Commercial License.
+<span class="lineNum">      32 </span>            : A copy of the Imebra Commercial License is available at http://imebra.com.
+<span class="lineNum">      33 </span>            : 
+<span class="lineNum">      34 </span>            : Imebra is available at http://imebra.com
+<span class="lineNum">      35 </span>            : 
+<span class="lineNum">      36 </span>            : The author can be contacted by email at info@binarno.com or by mail at
+<span class="lineNum">      37 </span>            :  the following address:
+<span class="lineNum">      38 </span>            :  Binarno s.p., Paolo Brandoli
+<span class="lineNum">      39 </span>            :  Rakuseva 14
+<span class="lineNum">      40 </span>            :  1000 Ljubljana
+<span class="lineNum">      41 </span>            :  Slovenia
+<span class="lineNum">      42 </span>            : 
+<span class="lineNum">      43 </span>            : 
+<span class="lineNum">      44 </span>            : 
+<span class="lineNum">      45 </span>            : */
+<span class="lineNum">      46 </span>            : 
+<span class="lineNum">      47 </span>            : /*! \file data.cpp
+<span class="lineNum">      48 </span>            :     \brief Implementation of the data class.
+<span class="lineNum">      49 </span>            : 
+<span class="lineNum">      50 </span>            : */
+<span class="lineNum">      51 </span>            : 
+<span class="lineNum">      52 </span>            : #include &quot;exceptionImpl.h&quot;
+<span class="lineNum">      53 </span>            : #include &quot;streamReaderImpl.h&quot;
+<span class="lineNum">      54 </span>            : #include &quot;streamWriterImpl.h&quot;
+<span class="lineNum">      55 </span>            : #include &quot;dataImpl.h&quot;
+<span class="lineNum">      56 </span>            : #include &quot;dataSetImpl.h&quot;
+<span class="lineNum">      57 </span>            : #include &quot;dicomDictImpl.h&quot;
+<span class="lineNum">      58 </span>            : #include &quot;bufferImpl.h&quot;
+<span class="lineNum">      59 </span>            : #include &quot;dataHandlerImpl.h&quot;
+<span class="lineNum">      60 </span>            : #include &quot;dataHandlerNumericImpl.h&quot;
+<span class="lineNum">      61 </span>            : #include &quot;../include/imebra/exceptions.h&quot;
+<span class="lineNum">      62 </span>            : #include &lt;iostream&gt;
+<span class="lineNum">      63 </span>            : 
+<span class="lineNum">      64 </span>            : namespace imebra
+<span class="lineNum">      65 </span>            : {
+<span class="lineNum">      66 </span>            : 
+<span class="lineNum">      67 </span>            : namespace implementation
+<span class="lineNum">      68 </span>            : {
+<span class="lineNum">      69 </span>            : 
+<span class="lineNum">      70 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      71 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      72 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      73 </span>            : //
+<span class="lineNum">      74 </span>            : //
+<span class="lineNum">      75 </span>            : //
+<span class="lineNum">      76 </span>            : // data
+<span class="lineNum">      77 </span>            : //
+<span class="lineNum">      78 </span>            : //
+<span class="lineNum">      79 </span>            : //
+<span class="lineNum">      80 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      81 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      82 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      83 </span>            : 
+<span class="lineNum">      84 </span>            : 
+<span class="lineNum">      85 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      86 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      87 </span>            : //
+<span class="lineNum">      88 </span>            : //
+<span class="lineNum">      89 </span>            : // Constructor
+<span class="lineNum">      90 </span>            : //
+<span class="lineNum">      91 </span>            : //
+<a name="92"><span class="lineNum">      92 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">      93 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">      94 </span><span class="lineCov">     123443 : data::data(tagVR_t tagVR, const charsetsList::tCharsetsList &amp;defaultCharsets):</span>
+<span class="lineNum">      95 </span><span class="lineCov">     123443 :     m_charsetsList(defaultCharsets), m_tagVR(tagVR)</span>
+<span class="lineNum">      96 </span>            : {
+<span class="lineNum">      97 </span><span class="lineCov">     123443 : }</span>
+<span class="lineNum">      98 </span>            : 
+<span class="lineNum">      99 </span>            : 
+<span class="lineNum">     100 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     101 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     102 </span>            : //
+<span class="lineNum">     103 </span>            : //
+<span class="lineNum">     104 </span>            : // Set a buffer
+<span class="lineNum">     105 </span>            : //
+<span class="lineNum">     106 </span>            : //
+<a name="107"><span class="lineNum">     107 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     108 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     109 </span><span class="lineCov">      42898 : void data::setBuffer(size_t bufferId, const std::shared_ptr&lt;buffer&gt;&amp; newBuffer)</span>
+<span class="lineNum">     110 </span>            : {
+<span class="lineNum">     111 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     112 </span>            : 
+<span class="lineNum">     113 </span><span class="lineCov">      85796 :     std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     114 </span>            : 
+<span class="lineNum">     115 </span>            :     // Assign the new buffer
+<span class="lineNum">     116 </span>            :     ///////////////////////////////////////////////////////////
+<span class="lineNum">     117 </span><span class="lineCov">      42898 :     m_buffers[bufferId] = newBuffer;</span>
+<span class="lineNum">     118 </span>            : 
+<span class="lineNum">     119 </span><span class="lineNoCov">          0 :     IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     120 </span><span class="lineCov">      42898 : }</span>
+<span class="lineNum">     121 </span>            : 
+<span class="lineNum">     122 </span>            : 
+<span class="lineNum">     123 </span>            : 
+<span class="lineNum">     124 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     125 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     126 </span>            : //
+<span class="lineNum">     127 </span>            : //
+<span class="lineNum">     128 </span>            : // Return the buffer's data type
+<span class="lineNum">     129 </span>            : //
+<span class="lineNum">     130 </span>            : //
+<a name="131"><span class="lineNum">     131 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     132 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     133 </span><span class="lineCov">     120613 : tagVR_t data::getDataType() const</span>
+<span class="lineNum">     134 </span>            : {
+<span class="lineNum">     135 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     136 </span>            : 
+<span class="lineNum">     137 </span><span class="lineCov">     120613 :     return m_tagVR;</span>
+<span class="lineNum">     138 </span>            : 
+<span class="lineNum">     139 </span>            :         IMEBRA_FUNCTION_END();
+<span class="lineNum">     140 </span>            : }
+<span class="lineNum">     141 </span>            : 
+<span class="lineNum">     142 </span>            : 
+<span class="lineNum">     143 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     144 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     145 </span>            : //
+<span class="lineNum">     146 </span>            : //
+<span class="lineNum">     147 </span>            : // Return the number of buffers in the tag
+<span class="lineNum">     148 </span>            : //
+<span class="lineNum">     149 </span>            : //
+<a name="150"><span class="lineNum">     150 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     151 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     152 </span><span class="lineNoCov">          0 : size_t data::getBuffersCount() const</span>
+<span class="lineNum">     153 </span>            : {
+<span class="lineNum">     154 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     155 </span>            : 
+<span class="lineNum">     156 </span><span class="lineNoCov">          0 :     std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     157 </span>            : 
+<span class="lineNum">     158 </span>            :         // Returns the number of buffers
+<span class="lineNum">     159 </span>            :         ///////////////////////////////////////////////////////////
+<span class="lineNum">     160 </span><span class="lineNoCov">          0 :         return m_buffers.size();</span>
+<span class="lineNum">     161 </span>            : 
+<span class="lineNum">     162 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     163 </span>            : }
+<span class="lineNum">     164 </span>            : 
+<span class="lineNum">     165 </span>            : 
+<span class="lineNum">     166 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     167 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     168 </span>            : //
+<span class="lineNum">     169 </span>            : //
+<span class="lineNum">     170 </span>            : // Return true if the specified buffer exists
+<span class="lineNum">     171 </span>            : //
+<span class="lineNum">     172 </span>            : //
+<a name="173"><span class="lineNum">     173 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     174 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     175 </span><span class="lineCov">     229729 : bool data::bufferExists(size_t bufferId) const</span>
+<span class="lineNum">     176 </span>            : {
+<span class="lineNum">     177 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     178 </span>            : 
+<span class="lineNum">     179 </span><span class="lineCov">     459458 :     std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     180 </span>            : 
+<span class="lineNum">     181 </span>            :         // Retrieve the buffer
+<span class="lineNum">     182 </span>            :         ///////////////////////////////////////////////////////////
+<span class="lineNum">     183 </span><span class="lineCov">     229729 :     tBuffersMap::const_iterator findBuffer = m_buffers.find(bufferId);</span>
+<span class="lineNum">     184 </span><span class="lineCov">     459458 :         return (findBuffer != m_buffers.end());</span>
+<span class="lineNum">     185 </span>            : 
+<span class="lineNum">     186 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     187 </span>            : }
+<span class="lineNum">     188 </span>            : 
+<span class="lineNum">     189 </span>            : 
+<span class="lineNum">     190 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     191 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     192 </span>            : //
+<span class="lineNum">     193 </span>            : //
+<span class="lineNum">     194 </span>            : // Return the size of a buffer
+<span class="lineNum">     195 </span>            : //
+<span class="lineNum">     196 </span>            : //
+<a name="197"><span class="lineNum">     197 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     198 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     199 </span><span class="lineCov">      80975 : size_t data::getBufferSize(size_t bufferId) const</span>
+<span class="lineNum">     200 </span>            : {
+<span class="lineNum">     201 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     202 </span>            : 
+<span class="lineNum">     203 </span><span class="lineCov">     161950 :     std::shared_ptr&lt;buffer&gt; pTempBuffer;</span>
+<span class="lineNum">     204 </span>            : 
+<span class="lineNum">     205 </span>            :     {
+<span class="lineNum">     206 </span><span class="lineCov">     161950 :         std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     207 </span>            : 
+<span class="lineNum">     208 </span>            :         // Retrieve the buffer
+<span class="lineNum">     209 </span>            :         ///////////////////////////////////////////////////////////
+<span class="lineNum">     210 </span><span class="lineCov">      80975 :         tBuffersMap::const_iterator findBuffer = m_buffers.find(bufferId);</span>
+<span class="lineNum">     211 </span><span class="lineCov">      80975 :         if(findBuffer == m_buffers.end())</span>
+<span class="lineNum">     212 </span>            :         {
+<span class="lineNum">     213 </span><span class="lineNoCov">          0 :             IMEBRA_THROW(MissingBufferError, &quot;The buffer with ID &quot; &lt;&lt; bufferId &lt;&lt; &quot; is missing&quot;);</span>
+<span class="lineNum">     214 </span>            :         }
+<span class="lineNum">     215 </span><span class="lineCov">      80975 :         pTempBuffer = findBuffer-&gt;second;</span>
+<span class="lineNum">     216 </span>            :     }
+<span class="lineNum">     217 </span>            : 
+<span class="lineNum">     218 </span>            :         // Retrieve the buffer's size
+<span class="lineNum">     219 </span>            :         ///////////////////////////////////////////////////////////
+<span class="lineNum">     220 </span><span class="lineCov">     161950 :     return pTempBuffer-&gt;getBufferSizeBytes();</span>
+<span class="lineNum">     221 </span>            : 
+<span class="lineNum">     222 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     223 </span>            : }
+<span class="lineNum">     224 </span>            : 
+<span class="lineNum">     225 </span>            : 
+<span class="lineNum">     226 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     227 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     228 </span>            : //
+<span class="lineNum">     229 </span>            : //
+<span class="lineNum">     230 </span>            : // Get an handler (normal or raw) for the buffer
+<span class="lineNum">     231 </span>            : //
+<span class="lineNum">     232 </span>            : //
+<a name="233"><span class="lineNum">     233 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     234 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     235 </span><span class="lineCov">     228068 : std::shared_ptr&lt;handlers::readingDataHandler&gt; data::getReadingDataHandler(size_t bufferId) const</span>
+<span class="lineNum">     236 </span>            : {
+<span class="lineNum">     237 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     238 </span>            : 
+<span class="lineNum">     239 </span><span class="lineCov">     456136 :     std::shared_ptr&lt;buffer&gt; pTempBuffer;</span>
+<span class="lineNum">     240 </span>            : 
+<span class="lineNum">     241 </span>            :     {
+<span class="lineNum">     242 </span><span class="lineCov">     456136 :         std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     243 </span>            : 
+<span class="lineNum">     244 </span>            :         // Retrieve the buffer
+<span class="lineNum">     245 </span>            :         ///////////////////////////////////////////////////////////
+<span class="lineNum">     246 </span><span class="lineCov">     228068 :         tBuffersMap::const_iterator findBuffer = m_buffers.find(bufferId);</span>
+<span class="lineNum">     247 </span><span class="lineCov">     228068 :         if(findBuffer == m_buffers.end())</span>
+<span class="lineNum">     248 </span>            :         {
+<span class="lineNum">     249 </span><span class="lineNoCov">          0 :             IMEBRA_THROW(MissingBufferError, &quot;The buffer with ID &quot; &lt;&lt; bufferId &lt;&lt; &quot; is missing&quot;);</span>
+<span class="lineNum">     250 </span>            :         }
+<span class="lineNum">     251 </span><span class="lineCov">     228068 :         pTempBuffer = findBuffer-&gt;second;</span>
+<span class="lineNum">     252 </span>            :     }
+<span class="lineNum">     253 </span>            : 
+<span class="lineNum">     254 </span><span class="lineCov">     456136 :     return pTempBuffer-&gt;getReadingDataHandler(m_tagVR);</span>
+<span class="lineNum">     255 </span>            : 
+<span class="lineNum">     256 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     257 </span>            : }
+<a name="258"><span class="lineNum">     258 </span>            : </a>
+<span class="lineNum">     259 </span>            : 
+<span class="lineNum">     260 </span><span class="lineCov">      37797 : std::shared_ptr&lt;handlers::writingDataHandler&gt; data::getWritingDataHandler(size_t bufferId)</span>
+<span class="lineNum">     261 </span>            : {
+<span class="lineNum">     262 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     263 </span>            : 
+<span class="lineNum">     264 </span><span class="lineCov">      75594 :     std::shared_ptr&lt;buffer&gt; pTempBuffer;</span>
+<span class="lineNum">     265 </span>            :     {
+<span class="lineNum">     266 </span><span class="lineCov">      75594 :         std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     267 </span>            : 
+<span class="lineNum">     268 </span>            :         // Retrieve the buffer
+<span class="lineNum">     269 </span>            :         ///////////////////////////////////////////////////////////
+<span class="lineNum">     270 </span><span class="lineCov">      37797 :         tBuffersMap::iterator findBuffer = m_buffers.find(bufferId);</span>
+<span class="lineNum">     271 </span><span class="lineCov">      37797 :         if(findBuffer != m_buffers.end())</span>
+<span class="lineNum">     272 </span>            :         {
+<span class="lineNum">     273 </span><span class="lineCov">       6995 :             pTempBuffer = findBuffer-&gt;second;</span>
+<span class="lineNum">     274 </span>            :         }
+<span class="lineNum">     275 </span>            : 
+<span class="lineNum">     276 </span>            :         // If the buffer doesn't exist, then create a new one
+<span class="lineNum">     277 </span>            :         ///////////////////////////////////////////////////////////
+<span class="lineNum">     278 </span><span class="lineCov">      37797 :         if(pTempBuffer == 0)</span>
+<span class="lineNum">     279 </span>            :         {
+<span class="lineNum">     280 </span><span class="lineCov">      30802 :             pTempBuffer = std::make_shared&lt;buffer&gt;();</span>
+<span class="lineNum">     281 </span><span class="lineCov">      30802 :             pTempBuffer-&gt;setCharsetsList(m_charsetsList);</span>
+<span class="lineNum">     282 </span><span class="lineCov">      30802 :             m_buffers[bufferId]=pTempBuffer;</span>
+<span class="lineNum">     283 </span>            :         }
+<span class="lineNum">     284 </span>            :     }
+<span class="lineNum">     285 </span>            : 
+<span class="lineNum">     286 </span><span class="lineCov">      75594 :     return pTempBuffer-&gt;getWritingDataHandler(m_tagVR);</span>
+<span class="lineNum">     287 </span>            : 
+<span class="lineNum">     288 </span><span class="lineNoCov">          0 :     IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     289 </span>            : }
+<span class="lineNum">     290 </span>            : 
+<span class="lineNum">     291 </span>            : 
+<span class="lineNum">     292 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     293 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     294 </span>            : //
+<span class="lineNum">     295 </span>            : //
+<span class="lineNum">     296 </span>            : // Get a raw data handler
+<span class="lineNum">     297 </span>            : //
+<span class="lineNum">     298 </span>            : //
+<a name="299"><span class="lineNum">     299 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     300 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     301 </span><span class="lineCov">      41201 : std::shared_ptr&lt;handlers::readingDataHandlerRaw&gt; data::getReadingDataHandlerRaw(size_t bufferId) const</span>
+<span class="lineNum">     302 </span>            : {
+<span class="lineNum">     303 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     304 </span>            : 
+<span class="lineNum">     305 </span><span class="lineCov">      82402 :         std::shared_ptr&lt;buffer&gt; pTempBuffer;</span>
+<span class="lineNum">     306 </span>            :     {
+<span class="lineNum">     307 </span><span class="lineCov">      82402 :         std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     308 </span>            : 
+<span class="lineNum">     309 </span><span class="lineCov">      41201 :         tBuffersMap::const_iterator findBuffer = m_buffers.find(bufferId);</span>
+<span class="lineNum">     310 </span><span class="lineCov">      41201 :         if(findBuffer == m_buffers.end() )</span>
+<span class="lineNum">     311 </span>            :         {
+<span class="lineNum">     312 </span><span class="lineNoCov">          0 :             IMEBRA_THROW(MissingBufferError, &quot;The buffer with ID &quot; &lt;&lt; bufferId &lt;&lt; &quot; is missing&quot;);</span>
+<span class="lineNum">     313 </span>            :         }
+<span class="lineNum">     314 </span><span class="lineCov">      41201 :         pTempBuffer = findBuffer-&gt;second;</span>
+<span class="lineNum">     315 </span>            :     }
+<span class="lineNum">     316 </span>            : 
+<span class="lineNum">     317 </span><span class="lineCov">      82402 :     return pTempBuffer-&gt;getReadingDataHandlerRaw(m_tagVR);</span>
+<span class="lineNum">     318 </span>            : 
+<span class="lineNum">     319 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     320 </span>            : }
+<a name="321"><span class="lineNum">     321 </span>            : </a>
+<span class="lineNum">     322 </span>            : 
+<span class="lineNum">     323 </span><span class="lineCov">      47791 : std::shared_ptr&lt;handlers::writingDataHandlerRaw&gt; data::getWritingDataHandlerRaw(size_t bufferId)</span>
+<span class="lineNum">     324 </span>            : {
+<span class="lineNum">     325 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     326 </span>            : 
+<span class="lineNum">     327 </span><span class="lineCov">      95582 :     std::shared_ptr&lt;buffer&gt; pTempBuffer;</span>
+<span class="lineNum">     328 </span>            : 
+<span class="lineNum">     329 </span>            :     {
+<span class="lineNum">     330 </span><span class="lineCov">      95582 :         std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     331 </span>            : 
+<span class="lineNum">     332 </span><span class="lineCov">      47791 :         tBuffersMap::iterator findBuffer = m_buffers.find(bufferId);</span>
+<span class="lineNum">     333 </span><span class="lineCov">      47791 :         if(findBuffer != m_buffers.end() )</span>
+<span class="lineNum">     334 </span>            :         {
+<span class="lineNum">     335 </span><span class="lineCov">       3673 :             pTempBuffer = findBuffer-&gt;second;</span>
+<span class="lineNum">     336 </span>            :         }
+<span class="lineNum">     337 </span>            : 
+<span class="lineNum">     338 </span>            :         // If the buffer doesn't exist, then create a new one
+<span class="lineNum">     339 </span>            :         ///////////////////////////////////////////////////////////
+<span class="lineNum">     340 </span><span class="lineCov">      47791 :         if(pTempBuffer == 0)</span>
+<span class="lineNum">     341 </span>            :         {
+<span class="lineNum">     342 </span><span class="lineCov">      44118 :             pTempBuffer = std::make_shared&lt;buffer&gt;();</span>
+<span class="lineNum">     343 </span><span class="lineCov">      44118 :             pTempBuffer-&gt;setCharsetsList(m_charsetsList);</span>
+<span class="lineNum">     344 </span><span class="lineCov">      44118 :             m_buffers[bufferId] = pTempBuffer;</span>
+<span class="lineNum">     345 </span>            :         }
+<span class="lineNum">     346 </span>            :     }
+<span class="lineNum">     347 </span>            : 
+<span class="lineNum">     348 </span><span class="lineCov">      95582 :     return pTempBuffer-&gt;getWritingDataHandlerRaw(m_tagVR);</span>
+<span class="lineNum">     349 </span>            : 
+<span class="lineNum">     350 </span><span class="lineNoCov">          0 :     IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     351 </span>            : }
+<a name="352"><span class="lineNum">     352 </span>            : </a>
+<span class="lineNum">     353 </span>            : 
+<span class="lineNum">     354 </span><span class="lineCov">       1221 : std::shared_ptr&lt;handlers::readingDataHandlerNumericBase&gt; data::getReadingDataHandlerNumeric(size_t bufferId) const</span>
+<span class="lineNum">     355 </span>            : {
+<span class="lineNum">     356 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     357 </span>            : 
+<span class="lineNum">     358 </span><span class="lineCov">       2442 :     std::shared_ptr&lt;buffer&gt; pTempBuffer;</span>
+<span class="lineNum">     359 </span>            :     {
+<span class="lineNum">     360 </span><span class="lineCov">       2442 :         std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     361 </span>            : 
+<span class="lineNum">     362 </span><span class="lineCov">       1221 :         tBuffersMap::const_iterator findBuffer = m_buffers.find(bufferId);</span>
+<span class="lineNum">     363 </span><span class="lineCov">       1221 :         if(findBuffer == m_buffers.end() )</span>
+<span class="lineNum">     364 </span>            :         {
+<span class="lineNum">     365 </span><span class="lineNoCov">          0 :             IMEBRA_THROW(MissingBufferError, &quot;The buffer with ID &quot; &lt;&lt; bufferId &lt;&lt; &quot; is missing&quot;);</span>
+<span class="lineNum">     366 </span>            :         }
+<span class="lineNum">     367 </span><span class="lineCov">       1221 :         pTempBuffer = findBuffer-&gt;second;</span>
+<span class="lineNum">     368 </span>            :     }
+<span class="lineNum">     369 </span>            : 
+<span class="lineNum">     370 </span><span class="lineCov">       2442 :     return pTempBuffer-&gt;getReadingDataHandlerNumeric(m_tagVR);</span>
+<span class="lineNum">     371 </span>            : 
+<span class="lineNum">     372 </span><span class="lineNoCov">          0 :     IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     373 </span>            : }
+<a name="374"><span class="lineNum">     374 </span>            : </a>
+<span class="lineNum">     375 </span>            : 
+<span class="lineNum">     376 </span><span class="lineCov">        832 : std::shared_ptr&lt;handlers::writingDataHandlerNumericBase&gt; data::getWritingDataHandlerNumeric(size_t bufferId)</span>
+<span class="lineNum">     377 </span>            : {
+<span class="lineNum">     378 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     379 </span>            : 
+<span class="lineNum">     380 </span><span class="lineCov">       1664 :     std::shared_ptr&lt;buffer&gt; pTempBuffer;</span>
+<span class="lineNum">     381 </span>            : 
+<span class="lineNum">     382 </span>            :     {
+<span class="lineNum">     383 </span><span class="lineCov">       1664 :         std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     384 </span>            : 
+<span class="lineNum">     385 </span><span class="lineCov">        832 :         tBuffersMap::iterator findBuffer = m_buffers.find(bufferId);</span>
+<span class="lineNum">     386 </span><span class="lineCov">        832 :         if(findBuffer != m_buffers.end() )</span>
+<span class="lineNum">     387 </span>            :         {
+<span class="lineNum">     388 </span><span class="lineCov">          3 :             pTempBuffer = findBuffer-&gt;second;</span>
+<span class="lineNum">     389 </span>            :         }
+<span class="lineNum">     390 </span>            : 
+<span class="lineNum">     391 </span>            :         // If the buffer doesn't exist, then create a new one
+<span class="lineNum">     392 </span>            :         ///////////////////////////////////////////////////////////
+<span class="lineNum">     393 </span><span class="lineCov">        832 :         if(pTempBuffer == 0)</span>
+<span class="lineNum">     394 </span>            :         {
+<span class="lineNum">     395 </span><span class="lineCov">        829 :             pTempBuffer = std::make_shared&lt;buffer&gt;();</span>
+<span class="lineNum">     396 </span><span class="lineCov">        829 :             pTempBuffer-&gt;setCharsetsList(m_charsetsList);</span>
+<span class="lineNum">     397 </span><span class="lineCov">        829 :             m_buffers[bufferId] = pTempBuffer;</span>
+<span class="lineNum">     398 </span>            :         }
+<span class="lineNum">     399 </span>            :     }
+<span class="lineNum">     400 </span>            : 
+<span class="lineNum">     401 </span><span class="lineCov">       1664 :     return pTempBuffer-&gt;getWritingDataHandlerNumeric(m_tagVR);</span>
+<span class="lineNum">     402 </span>            : 
+<span class="lineNum">     403 </span><span class="lineNoCov">          0 :     IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     404 </span>            : }
+<span class="lineNum">     405 </span>            : 
+<span class="lineNum">     406 </span>            : 
+<span class="lineNum">     407 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     408 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     409 </span>            : //
+<span class="lineNum">     410 </span>            : //
+<span class="lineNum">     411 </span>            : // Get a stream reader that works on the buffer's data
+<span class="lineNum">     412 </span>            : //
+<span class="lineNum">     413 </span>            : //
+<a name="414"><span class="lineNum">     414 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     415 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     416 </span><span class="lineCov">      11081 : std::shared_ptr&lt;streamReader&gt; data::getStreamReader(size_t bufferId)</span>
+<span class="lineNum">     417 </span>            : {
+<span class="lineNum">     418 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     419 </span>            : 
+<span class="lineNum">     420 </span><span class="lineCov">      22162 :         std::shared_ptr&lt;buffer&gt; pTempBuffer;</span>
+<span class="lineNum">     421 </span>            : 
+<span class="lineNum">     422 </span>            :     {
+<span class="lineNum">     423 </span><span class="lineCov">      22162 :         std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     424 </span>            : 
+<span class="lineNum">     425 </span><span class="lineCov">      11081 :         tBuffersMap::iterator findBuffer = m_buffers.find(bufferId);</span>
+<span class="lineNum">     426 </span><span class="lineCov">      11081 :         if(findBuffer == m_buffers.end())</span>
+<span class="lineNum">     427 </span>            :         {
+<span class="lineNum">     428 </span><span class="lineNoCov">          0 :             IMEBRA_THROW(MissingBufferError, &quot;The buffer with ID &quot; &lt;&lt; bufferId &lt;&lt; &quot; is missing&quot;);</span>
+<span class="lineNum">     429 </span>            :         }
+<span class="lineNum">     430 </span><span class="lineCov">      11081 :         pTempBuffer = findBuffer-&gt;second;</span>
+<span class="lineNum">     431 </span>            :     }
+<span class="lineNum">     432 </span>            : 
+<span class="lineNum">     433 </span><span class="lineCov">      22162 :     return pTempBuffer-&gt;getStreamReader();</span>
+<span class="lineNum">     434 </span>            : 
+<span class="lineNum">     435 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     436 </span>            : }
+<span class="lineNum">     437 </span>            : 
+<span class="lineNum">     438 </span>            : 
+<span class="lineNum">     439 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     440 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     441 </span>            : //
+<span class="lineNum">     442 </span>            : //
+<span class="lineNum">     443 </span>            : // Get a stream writer that works on the buffer's data
+<span class="lineNum">     444 </span>            : //
+<span class="lineNum">     445 </span>            : //
+<a name="446"><span class="lineNum">     446 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     447 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     448 </span><span class="lineCov">       2751 : std::shared_ptr&lt;streamWriter&gt; data::getStreamWriter(size_t bufferId)</span>
+<span class="lineNum">     449 </span>            : {
+<span class="lineNum">     450 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     451 </span>            : 
+<span class="lineNum">     452 </span><span class="lineCov">       5502 :         std::shared_ptr&lt;buffer&gt; pTempBuffer;</span>
+<span class="lineNum">     453 </span>            : 
+<span class="lineNum">     454 </span>            :     {
+<span class="lineNum">     455 </span><span class="lineCov">       5502 :         std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     456 </span>            : 
+<span class="lineNum">     457 </span><span class="lineCov">       2751 :         tBuffersMap::iterator findBuffer = m_buffers.find(bufferId);</span>
+<span class="lineNum">     458 </span><span class="lineCov">       2751 :         if(findBuffer != m_buffers.end())</span>
+<span class="lineNum">     459 </span>            :         {
+<span class="lineNum">     460 </span><span class="lineNoCov">          0 :             pTempBuffer = findBuffer-&gt;second;</span>
+<span class="lineNum">     461 </span>            :         }
+<span class="lineNum">     462 </span>            : 
+<span class="lineNum">     463 </span>            :         // If the buffer doesn't exist, then create a new one
+<span class="lineNum">     464 </span>            :         ///////////////////////////////////////////////////////////
+<span class="lineNum">     465 </span><span class="lineCov">       2751 :         if(pTempBuffer == 0)</span>
+<span class="lineNum">     466 </span>            :         {
+<span class="lineNum">     467 </span><span class="lineCov">       2751 :             pTempBuffer = std::make_shared&lt;buffer&gt;();</span>
+<span class="lineNum">     468 </span><span class="lineCov">       2751 :             m_buffers[bufferId] = pTempBuffer;</span>
+<span class="lineNum">     469 </span>            :         }
+<span class="lineNum">     470 </span>            :     }
+<span class="lineNum">     471 </span>            : 
+<span class="lineNum">     472 </span><span class="lineCov">       5502 :     return pTempBuffer-&gt;getStreamWriter(m_tagVR);</span>
+<span class="lineNum">     473 </span>            : 
+<span class="lineNum">     474 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     475 </span>            : }
+<span class="lineNum">     476 </span>            : 
+<span class="lineNum">     477 </span>            : 
+<span class="lineNum">     478 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     479 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     480 </span>            : //
+<span class="lineNum">     481 </span>            : //
+<span class="lineNum">     482 </span>            : // Retrieve an embedded data set.
+<span class="lineNum">     483 </span>            : //
+<span class="lineNum">     484 </span>            : //
+<a name="485"><span class="lineNum">     485 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     486 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     487 </span><span class="lineCov">       9300 : std::shared_ptr&lt;dataSet&gt; data::getSequenceItem(size_t dataSetId) const</span>
+<span class="lineNum">     488 </span>            : {
+<span class="lineNum">     489 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     490 </span>            : 
+<span class="lineNum">     491 </span><span class="lineCov">      18600 :     std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     492 </span>            : 
+<span class="lineNum">     493 </span><span class="lineCov">       9300 :     if(m_embeddedDataSets.size() &lt;= dataSetId)</span>
+<span class="lineNum">     494 </span>            :         {
+<span class="lineNum">     495 </span><span class="lineCov">         17 :         IMEBRA_THROW(MissingItemError, &quot;The requested sequence item does not exist&quot;);</span>
+<span class="lineNum">     496 </span>            :         }
+<span class="lineNum">     497 </span>            : 
+<span class="lineNum">     498 </span><span class="lineCov">      18566 :         return m_embeddedDataSets[dataSetId];</span>
+<span class="lineNum">     499 </span>            : 
+<span class="lineNum">     500 </span><span class="lineCov">         17 :         IMEBRA_FUNCTION_END();</span>
+<a name="501"><span class="lineNum">     501 </span>            : }</a>
+<span class="lineNum">     502 </span>            : 
+<span class="lineNum">     503 </span><span class="lineCov">     181172 : bool data::dataSetExists(size_t dataSetId) const</span>
+<span class="lineNum">     504 </span>            : {
+<span class="lineNum">     505 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     506 </span>            : 
+<span class="lineNum">     507 </span><span class="lineCov">     362344 :     std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     508 </span>            : 
+<span class="lineNum">     509 </span><span class="lineCov">     362344 :     return m_embeddedDataSets.size() &gt; dataSetId;</span>
+<span class="lineNum">     510 </span>            : 
+<span class="lineNum">     511 </span><span class="lineNoCov">          0 :     IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     512 </span>            : }
+<span class="lineNum">     513 </span>            : 
+<span class="lineNum">     514 </span>            : 
+<span class="lineNum">     515 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     516 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     517 </span>            : //
+<span class="lineNum">     518 </span>            : //
+<span class="lineNum">     519 </span>            : // Set a data set
+<span class="lineNum">     520 </span>            : //
+<span class="lineNum">     521 </span>            : //
+<a name="522"><span class="lineNum">     522 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     523 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     524 </span><span class="lineCov">       5544 : void data::setSequenceItem(size_t dataSetId, std::shared_ptr&lt;dataSet&gt; pDataSet)</span>
+<span class="lineNum">     525 </span>            : {
+<span class="lineNum">     526 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     527 </span>            : 
+<span class="lineNum">     528 </span><span class="lineCov">      11088 :     std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     529 </span>            : 
+<span class="lineNum">     530 </span><span class="lineCov">       5544 :         if(dataSetId &gt;= m_embeddedDataSets.size())</span>
+<span class="lineNum">     531 </span>            :         {
+<span class="lineNum">     532 </span><span class="lineCov">       5544 :                 m_embeddedDataSets.resize(dataSetId + 1);</span>
+<span class="lineNum">     533 </span>            :         }
+<span class="lineNum">     534 </span><span class="lineCov">       5544 :         m_embeddedDataSets[dataSetId] = pDataSet;</span>
+<span class="lineNum">     535 </span>            : 
+<span class="lineNum">     536 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     537 </span><span class="lineCov">       5544 : }</span>
+<span class="lineNum">     538 </span>            : 
+<span class="lineNum">     539 </span>            : 
+<span class="lineNum">     540 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     541 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     542 </span>            : //
+<span class="lineNum">     543 </span>            : //
+<span class="lineNum">     544 </span>            : // Append a data set
+<span class="lineNum">     545 </span>            : //
+<span class="lineNum">     546 </span>            : //
+<a name="547"><span class="lineNum">     547 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     548 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     549 </span><span class="lineCov">          3 : void data::appendDataSet(std::shared_ptr&lt;dataSet&gt; pDataSet)</span>
+<span class="lineNum">     550 </span>            : {
+<span class="lineNum">     551 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     552 </span>            : 
+<span class="lineNum">     553 </span><span class="lineCov">          6 :     std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     554 </span>            : 
+<span class="lineNum">     555 </span><span class="lineCov">          3 :     pDataSet-&gt;setCharsetsList(m_charsetsList);</span>
+<span class="lineNum">     556 </span><span class="lineCov">          3 :     m_embeddedDataSets.push_back(pDataSet);</span>
+<span class="lineNum">     557 </span>            : 
+<span class="lineNum">     558 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     559 </span><span class="lineCov">          3 : }</span>
+<span class="lineNum">     560 </span>            : 
+<span class="lineNum">     561 </span>            : 
+<span class="lineNum">     562 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     563 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     564 </span>            : //
+<span class="lineNum">     565 </span>            : //
+<span class="lineNum">     566 </span>            : // Define the charset to use in the buffers and embedded
+<span class="lineNum">     567 </span>            : //  datasets
+<span class="lineNum">     568 </span>            : //
+<span class="lineNum">     569 </span>            : //
+<a name="570"><span class="lineNum">     570 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     571 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     572 </span><span class="lineCov">      90154 : void data::setCharsetsList(const charsetsList::tCharsetsList&amp; charsetsList)</span>
+<span class="lineNum">     573 </span>            : {
+<span class="lineNum">     574 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     575 </span>            : 
+<span class="lineNum">     576 </span><span class="lineCov">     180308 :     std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     577 </span>            : 
+<span class="lineNum">     578 </span><span class="lineCov">      90154 :     m_charsetsList = charsetsList;</span>
+<span class="lineNum">     579 </span>            : 
+<span class="lineNum">     580 </span><span class="lineCov">      93837 :         for(tEmbeddedDatasetsMap::iterator scanEmbeddedDataSets = m_embeddedDataSets.begin(); scanEmbeddedDataSets != m_embeddedDataSets.end(); ++scanEmbeddedDataSets)</span>
+<span class="lineNum">     581 </span>            :         {
+<span class="lineNum">     582 </span><span class="lineCov">       3683 :         (*scanEmbeddedDataSets)-&gt;setCharsetsList(charsetsList);</span>
+<span class="lineNum">     583 </span>            :         }
+<span class="lineNum">     584 </span>            : 
+<span class="lineNum">     585 </span><span class="lineCov">     178954 :         for(tBuffersMap::iterator scanBuffers = m_buffers.begin(); scanBuffers != m_buffers.end(); ++scanBuffers)</span>
+<span class="lineNum">     586 </span>            :         {
+<span class="lineNum">     587 </span><span class="lineCov">      88800 :         scanBuffers-&gt;second-&gt;setCharsetsList(charsetsList);</span>
+<span class="lineNum">     588 </span>            :         }
+<span class="lineNum">     589 </span>            : 
+<span class="lineNum">     590 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     591 </span><span class="lineCov">      90154 : }</span>
+<span class="lineNum">     592 </span>            : 
+<span class="lineNum">     593 </span>            : 
+<span class="lineNum">     594 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     595 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     596 </span>            : //
+<span class="lineNum">     597 </span>            : //
+<span class="lineNum">     598 </span>            : // Get the charset used by the buffers and the embedded
+<span class="lineNum">     599 </span>            : //  datasets
+<span class="lineNum">     600 </span>            : //
+<span class="lineNum">     601 </span>            : //
+<a name="602"><span class="lineNum">     602 </span>            : ///////////////////////////////////////////////////////////</a>
+<span class="lineNum">     603 </span>            : ///////////////////////////////////////////////////////////
+<span class="lineNum">     604 </span><span class="lineCov">      60596 : void data::getCharsetsList(charsetsList::tCharsetsList* pCharsetsList) const</span>
+<span class="lineNum">     605 </span>            : {
+<span class="lineNum">     606 </span>            :     IMEBRA_FUNCTION_START();
+<span class="lineNum">     607 </span>            : 
+<span class="lineNum">     608 </span><span class="lineCov">     121192 :     std::lock_guard&lt;std::mutex&gt; lock(m_mutex);</span>
+<span class="lineNum">     609 </span>            : 
+<span class="lineNum">     610 </span><span class="lineCov">      64306 :     for(tEmbeddedDatasetsMap::const_iterator scanEmbeddedDataSets = m_embeddedDataSets.begin(); scanEmbeddedDataSets != m_embeddedDataSets.end(); ++scanEmbeddedDataSets)</span>
+<span class="lineNum">     611 </span>            :         {
+<span class="lineNum">     612 </span><span class="lineCov">       7420 :                 charsetsList::tCharsetsList charsets;</span>
+<span class="lineNum">     613 </span><span class="lineCov">       3710 :                 (*scanEmbeddedDataSets)-&gt;getCharsetsList(&amp;charsets);</span>
+<span class="lineNum">     614 </span><span class="lineCov">       3710 :         charsetsList::updateCharsets(&amp;charsets, pCharsetsList);</span>
+<span class="lineNum">     615 </span>            :         }
+<span class="lineNum">     616 </span>            : 
+<span class="lineNum">     617 </span><span class="lineCov">     119812 :     for(tBuffersMap::const_iterator scanBuffers = m_buffers.begin(); scanBuffers != m_buffers.end(); ++scanBuffers)</span>
+<span class="lineNum">     618 </span>            :         {
+<span class="lineNum">     619 </span><span class="lineCov">     118432 :                 charsetsList::tCharsetsList charsets;</span>
+<span class="lineNum">     620 </span><span class="lineCov">      59216 :                 scanBuffers-&gt;second-&gt;getCharsetsList(&amp;charsets);</span>
+<span class="lineNum">     621 </span><span class="lineCov">      59216 :         charsetsList::updateCharsets(&amp;charsets, pCharsetsList);</span>
+<span class="lineNum">     622 </span>            :         }
+<span class="lineNum">     623 </span>            : 
+<span class="lineNum">     624 </span><span class="lineNoCov">          0 :         IMEBRA_FUNCTION_END();</span>
+<span class="lineNum">     625 </span><span class="lineCov">      60596 : }</span>
+<span class="lineNum">     626 </span>            : 
+<span class="lineNum">     627 </span>            : 
+<a name="628"><span class="lineNum">     628 </span>            : } // namespace implementation</a>
+<span class="lineNum">     629 </span>            : 
+<span class="lineNum">     630 </span><span class="lineCov">          3 : } // namespace imebra</span>
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.12</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>
