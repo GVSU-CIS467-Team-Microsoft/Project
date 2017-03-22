@@ -1,0 +1,4 @@
+# Patient data files
+*.dcm
+*.dat
+*patient_data*
