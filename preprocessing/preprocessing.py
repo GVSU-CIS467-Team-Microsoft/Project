@@ -199,7 +199,8 @@ for index, patient in enumerate(patients):
     #if you want to visualize the data uncomment the below 2 lines
     #plot_3d(segmented_lungs, 0) 
     #break;
-    with open("patient_{0}.dat".format(index),"w+") as f:
+    
+    with open("patient_data_0/patient_{0}.dat".format(index),"w+") as f:
         for axis in segmented_lungs:
             f.write("/1\n")
             for current_slice in axis:
@@ -208,8 +209,23 @@ for index, patient in enumerate(patients):
                     f.write(str(hu_value))
                     f.write(",")
                 f.write('\n')
-
-
+    
+    with open("patient_data_0/patient_{0}.bin".format(index),"w+b") as f:
+        counter = 7;
+        byte = 0;
+        for axis in segmented_lungs:
+            for current_slice in axis:
+                #add 8 bits into a byte and write it out to file
+                for hu_value in current_slice:
+                    bit = hu_value * pow(2, counter);
+                    byte += bit;
+                    if counter == 0:
+                        f.write(byte.item().to_bytes(1, byteorder='big',signed=False))
+                        byte = 0
+                        counter = 7
+                    else:
+                        counter -= 1
+            
 #---------------------------------------------------------------------------------------------------------- load_array.cpp will be based off this                
 # overall_array = []
 # outer_index = -1;
