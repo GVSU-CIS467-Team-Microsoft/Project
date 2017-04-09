@@ -36,7 +36,7 @@ def load_scan(path):
         slice_thickness = np.abs(slices[0].ImagePositionPatient[2] - slices[1].ImagePositionPatient[2])
     except:
         slice_thickness = np.abs(slices[0].SliceLocation - slices[1].SliceLocation)
-        
+
     for s in slices:
         s.SliceThickness = slice_thickness
     return slices
@@ -47,26 +47,26 @@ def get_pixels_hu(slices):
     print("shape of one slice: ")
 
     print(slices[0].pixel_array.shape)
-    # Convert to int16 (from sometimes int16), 
+    # Convert to int16 (from sometimes int16),
     # should be possible as values should always be low enough (<32k)
     image = image.astype(np.int16)
 
     # Set outside-of-scan pixels to 0
     # The intercept is usually -1024, so air is approximately 0
     image[image == -2000] = 0
-    
+
     # Convert to Hounsfield units (HU)
     for slice_number in range(len(slices)):
-        
+
         intercept = slices[slice_number].RescaleIntercept
         slope = slices[slice_number].RescaleSlope
-        
+
         if slope != 1:
             image[slice_number] = slope * image[slice_number].astype(np.float64)
             image[slice_number] = image[slice_number].astype(np.int16)
-            
+
         image[slice_number] += np.int16(intercept)
-        
+
     return np.array(image, dtype=np.int16)
 
 def resample(image, scan, new_spacing=[1,1,1]):
@@ -78,17 +78,17 @@ def resample(image, scan, new_spacing=[1,1,1]):
     new_shape = np.round(new_real_shape)
     real_resize_factor = new_shape / image.shape
     new_spacing = spacing / real_resize_factor
-    
+
     image = scipy.ndimage.interpolation.zoom(image, real_resize_factor, mode='nearest')
 
     return image, new_spacing
 
 def plot_3d(image, threshold=-300):
-    
-    # Position the scan upright, 
+
+    # Position the scan upright,
     # so the head of the patient would be at the top facing the camera
     p = image.transpose(2,1,0)
-    
+
     verts, faces = measure.marching_cubes(p, threshold)
 
     fig = plot.figure(figsize=(10, 10))
@@ -120,24 +120,24 @@ def largest_label_volume(im, bg=-1):
         return None
 
 def segment_lung_mask(image, fill_lung_structures=True):
-    
-    # not actually binary, but 1 and 2. 
+
+    # not actually binary, but 1 and 2.
     # 0 is treated as background, which we do not want
     binary_image = np.array(image > -320, dtype=np.int8)+1
 
     labels = measure.label(binary_image)
-    
+
     # Pick the pixel in the very corner to determine which label is air.
     #   Improvement: Pick multiple background labels from around the patient
-    #   More resistant to "trays" on which the patient lays cutting the air 
+    #   More resistant to "trays" on which the patient lays cutting the air
     #   around the person in half
     background_label = labels[0,0,0]
-    
+
     #Fill the air around the person
     binary_image[background_label == labels] = 2
-    
-    
-    # Method of filling the lung structures (that is superior to something like 
+
+
+    # Method of filling the lung structures (that is superior to something like
     # morphological closing)
     if fill_lung_structures:
         # For every slice we determine the largest solid structure
@@ -145,20 +145,20 @@ def segment_lung_mask(image, fill_lung_structures=True):
             axial_slice = axial_slice - 1
             labeling = measure.label(axial_slice)
             l_max = largest_label_volume(labeling, bg=0)
-            
+
             if l_max is not None: #This slice contains some lung
                 binary_image[i][labeling != l_max] = 1
 
-    
+
     binary_image -= 1 #Make the image actual binary
     binary_image = 1-binary_image # Invert it, lungs are now 1
-    
+
     # Remove other air pockets insided body
     labels = measure.label(binary_image, background=0)
     l_max = largest_label_volume(labels, bg=0)
     if l_max is not None: # There are air pockets
         binary_image[labels != l_max] = 0
-        
+
     return binary_image
 
 def normalize(image):
@@ -172,7 +172,7 @@ def zero_center(image):
     return image
 
 def resize_to_dimensions(array,x,y,z):
-    oldx = array.shape[0] 
+    oldx = array.shape[0]
     oldy = array.shape[1]
     oldz = array.shape[2]
     xRatio = x / oldx
@@ -204,7 +204,8 @@ def resize_to_dimensions(array,x,y,z):
 #     #if you want to visualize the data uncomment the below 2 lines
 #     #plot_3d(segmented_lungs, 0)
 #     #break;
-#     with open("patient_{0}.dat".format(index),"w+") as f:
+#
+#     with open("patient_data_0/patient_{0}.dat".format(index),"w+") as f:
 #         for axis in segmented_lungs:
 #             f.write("/1\n")
 #             for current_slice in axis:
@@ -213,6 +214,26 @@ def resize_to_dimensions(array,x,y,z):
 #                     f.write(str(hu_value))
 #                     f.write(",")
 #                 f.write('\n')
+#
+
+# -----------------------------------------------------------------------------
+# Binary output
+# -----------------------------------------------------------------------------
+#     with open("patient_data_0/patient_{0}.bin".format(index),"w+b") as f:
+#         counter = 7;
+#         byte = 0;
+#         for axis in segmented_lungs:
+#             for current_slice in axis:
+#                 #add 8 bits into a byte and write it out to file
+#                 for hu_value in current_slice:
+#                     bit = hu_value * pow(2, counter);
+#                     byte += bit;
+#                     if counter == 0:
+#                         f.write(byte.item().to_bytes(1, byteorder='big',signed=False))
+#                         byte = 0
+#                         counter = 7
+#                     else:
+#                         counter -= 1
 
 
 # -----------------------------------------------------------------------------------
@@ -242,8 +263,7 @@ with open("{0}.dat".format(os.path.basename(sys.argv[1])), "w+") as f:
                 f.write(",")
             f.write('\n')
 
-
-#---------------------------------------------------------------------------------------------------------- load_array.cpp will be based off this                
+#---------------------------------------------------------------------------------------------------------- load_array.cpp will be based off this
 # overall_array = []
 # outer_index = -1;
 # inner_index = -1;
@@ -297,6 +317,6 @@ with open("{0}.dat".format(os.path.basename(sys.argv[1])), "w+") as f:
 # print(segmented_lungs[1].ndim)
 
 
-    
+
 
 # # plot_3d(segmented_lungs, 0)
