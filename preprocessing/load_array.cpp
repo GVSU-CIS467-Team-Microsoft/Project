@@ -8,9 +8,12 @@
 //tested on linux mint 18 "sarah" (cinnamon)
 #include <sstream>
 #include <string>
+#include <iterator>
 #include <vector>
 #include <regex>
 #include <fstream>
+#include <fstream>
+#include <iostream>
 
 std::vector<short> read(std::string filename){
   std::vector<short> flattened = std::vector<short>();
@@ -37,18 +40,62 @@ std::vector<short> read(std::string filename){
       }
     }
   }
-  //printf("flattened array size is: %lu bytes or %f megabytes", flattened.size() * sizeof(short), flattened.size() * sizeof(short) / 1024.0 / 1024.0);
+
   return flattened;
 }
 
-std::vector<short> read_numbered_file(std::string parent_directory, int file_num){
-  std::string name = (new std::string(parent_directory))->append("/patient_" + std::to_string(file_num) + ".dat");
+std::vector<char> read_binary(std::string filename){
+  std::ifstream input (filename, std::ifstream::binary);
+  if(input){
+    //get file length
+    input.seekg (0, input.end);
+    int length = input.tellg();
+    input.seekg (0, input.beg);
+
+    //char* arr = new char[length];
+    std::vector<char> arr(length);
+    input.read(&arr[0], length);
+    if(input){
+      std::cout << "File " << filename  << " was read successfully" << std::endl;
+    }else{
+      std::cout << "ERROR! File " << filename << " couldn't be read, only: " << input.gcount() << " bytes could be read!" << std::endl;
+    }
+
+    // for (std::vector<char>::const_iterator i = arr.begin(); i != arr.end(); ++i){
+    //   std::cout << *i << ' ';
+    // }
+    return arr;
+  }
+
+  return std::vector<char>();
+}
+
+std::vector<char> read_numbered_file(std::string parent_directory, int file_num){
+  std::string name = (new std::string(parent_directory))->append("/patient_" + std::to_string(file_num));// + ".dat");
   //printf("name: %s\n", name.c_str());
-  return read(name);
+  std::vector<short> orig = read(name + ".dat");
+  std::vector<char> bin = read_binary(name + ".bin");
+  std::vector<uint8_t> bin_better(bin.size());
+  memcpy(&bin_better[0], &bin[0], bin.size());
+  std::cout << "size of original: " << orig.size() << ", size of bin_better: " << bin_better.size() << std::endl;
+  // int failed = 0;
+  // for(unsigned int i = 0; i < bin_better.size(); i++){
+  //   if((unsigned int)((unsigned int)bin_better[i] >> 7) != (unsigned int)(orig[i])){
+  //     failed++;
+  //   }
+  // }
+  // if(failed){
+  //   std::cout << "something didn't match!: " << failed << std::endl;
+  // }
+  
+  // std::cout << "first byte is: " << (unsigned int)bin_better[failed] << std::endl;
+  // std::cout << "first few are: " << orig[failed] << "," << orig[failed+1] << "," << orig[failed+2] << "," << orig[failed+3] << "," << orig[failed+4] << "," << orig[failed+5] << "," << orig[failed+6] << "," << orig[failed+7] << std::endl;
+  return bin;
+    
 }
 
 //for testing
 int main(int argc, char **argv){
-  //read("patient_0.dat"); //file must be in same directory
-  read_numbered_file("patient_data", 0);
+  read("patient_data_0"); //file must be in same directory
+  read_numbered_file("patient_data_0", 0);
 }
